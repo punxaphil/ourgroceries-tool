@@ -1,10 +1,11 @@
 [project]
 name = "ourgroceries-tool-py"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "OurGroceries list viewer"
 requires-python = ">=3.9"
 dependencies = [
+    "fastapi>=0.120.0",
     "ourgroceries>=1.5.4",
     "python-dotenv>=1.1.1",
+    "uvicorn[standard]>=0.38.0",
 ]
