@@ -369,7 +369,7 @@ function App() {
                 React.createElement('h2', null, section.name),
                 React.createElement(
                     'ul',
-                    null,
+                    { className: 'category-items' },
                     section.items.map((item) =>
                         React.createElement(
                             'li',
