@@ -291,3 +291,22 @@ section {
         gap: 1.25rem;
     }
 }
+
+/* Responsive category items grid */
+.category-items {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+@media (min-width: 700px) {
+    .category-items {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (min-width: 1050px) {
+    .category-items {
+        grid-template-columns: 1fr 1fr 1fr;
+    }
+}
