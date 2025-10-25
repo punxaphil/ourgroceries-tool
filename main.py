@@ -1,12 +1,18 @@
-import asyncio
-import json
 import os
-from typing import Iterable
+from functools import lru_cache
+from typing import Any
 
+import uvicorn
 from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from ourgroceries import InvalidLoginException, OurGroceries
 
+app = FastAPI()
 
+
+@lru_cache(maxsize=1)
 def load_credentials() -> tuple[str, str]:
     """Load credentials from environment variables and ensure they are set."""
     load_dotenv()
@@ -19,7 +25,7 @@ def load_credentials() -> tuple[str, str]:
     return email, password
 
 
-def extract_names(payload) -> list[str]:
+def extract_names(payload: Any) -> list[str]:
     """Extract list names from any list-like structures in the response."""
     names: list[str] = []
     if isinstance(payload, dict):
@@ -46,26 +52,33 @@ def extract_names(payload) -> list[str]:
     return unique_names
 
 
-async def display_list_names() -> None:
+async def fetch_list_names() -> list[str]:
     email, password = load_credentials()
     client = OurGroceries(email, password)
     await client.login()
     overview = await client.get_my_lists()
     names = extract_names(overview)
-    if names:
-        print("Your OurGroceries lists:")
-        for name in names:
-            print(f"- {name}")
-    else:
-        print("No list names found; raw response follows:")
-        print(json.dumps(overview, indent=2, sort_keys=True))
+    if not names:
+        raise RuntimeError("No list names found in OurGroceries response")
+    return names
+
+
+@app.get("/api/lists")
+async def api_lists() -> JSONResponse:
+    try:
+        names = await fetch_list_names()
+    except InvalidLoginException as exc:
+        raise HTTPException(status_code=401, detail="OurGroceries login failed") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return JSONResponse({"lists": names})
+
+
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 
 def main() -> None:
-    try:
-        asyncio.run(display_list_names())
-    except InvalidLoginException as exc:
-        raise RuntimeError("OurGroceries login failed") from exc
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
 
 
 if __name__ == "__main__":
