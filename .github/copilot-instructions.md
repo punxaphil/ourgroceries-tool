@@ -8,3 +8,4 @@
 
 # Guidelines
 * No README or documentation needed.
+* After changes, always start the server.
