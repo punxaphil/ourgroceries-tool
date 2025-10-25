@@ -208,6 +208,11 @@ class MoveItemsRequest(BaseModel):
     target_category_id: Optional[str] = None
 
 
+class DeleteItemsRequest(BaseModel):
+    list_id: str
+    item_ids: List[str]
+
+
 @app.post("/api/master/move")
 async def api_move_master_item(request: MoveItemsRequest) -> JSONResponse:
     if not request.items:
@@ -224,6 +229,32 @@ async def api_move_master_item(request: MoveItemsRequest) -> JSONResponse:
                 request.target_category_id,
                 entry.item_name,
             )
+    except InvalidLoginException as exc:
+        raise HTTPException(status_code=401, detail="OurGroceries login failed") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    try:
+        payload = await fetch_lists_payload()
+    except InvalidLoginException as exc:
+        raise HTTPException(status_code=401, detail="OurGroceries login failed") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return JSONResponse({"masterList": payload["masterList"]})
+
+
+@app.post("/api/master/delete")
+async def api_delete_master_items(request: DeleteItemsRequest) -> JSONResponse:
+    if not request.item_ids:
+        raise HTTPException(status_code=400, detail="No items provided for delete operation")
+
+    try:
+        email, password = load_credentials()
+        client = OurGroceries(email, password)
+        await client.login()
+        for item_id in request.item_ids:
+            await client.remove_item_from_list(request.list_id, item_id)
     except InvalidLoginException as exc:
         raise HTTPException(status_code=401, detail="OurGroceries login failed") from exc
     except Exception as exc:

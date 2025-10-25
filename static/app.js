@@ -30,10 +30,13 @@ function App() {
     const [selectedItemIds, setSelectedItemIds] = useState([]);
     const [moveTarget, setMoveTarget] = useState('');
     const [moving, setMoving] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const [moveError, setMoveError] = useState(null);
     const [toasts, setToasts] = useState([]);
     const [hasLoadedStoredTarget, setHasLoadedStoredTarget] = useState(false);
     const toastTimeouts = useRef(new Map());
+
+    const isBusy = moving || deleting;
 
     const addToast = useCallback((message) => {
         const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -194,7 +197,7 @@ function App() {
 
     const handleMoveSubmit = async (event) => {
         event.preventDefault();
-        if (moving || !data.masterList || selectedItems.length === 0 || !hasMoveOptions) {
+        if (isBusy || !data.masterList || selectedItems.length === 0 || !hasMoveOptions) {
             return;
         }
 
@@ -252,6 +255,68 @@ function App() {
             setMoveError('Unable to move items. Try again.');
         } finally {
             setMoving(false);
+        }
+    };
+
+    const handleDeleteSelected = async () => {
+        if (isBusy || !data.masterList || selectedItems.length === 0) {
+            return;
+        }
+
+        const listId = data.masterList.id;
+        const itemsToDelete = selectedItems.filter((item) => item && item.id);
+        if (itemsToDelete.length === 0) {
+            return;
+        }
+
+        const confirmation =
+            itemsToDelete.length === 1
+                ? `Delete "${itemsToDelete[0].name}" from the master list?`
+                : `Delete ${itemsToDelete.length} items from the master list?`;
+
+        if (!window.confirm(confirmation)) {
+            return;
+        }
+
+        setDeleting(true);
+        setMoveError(null);
+
+        try {
+            const response = await fetch('/api/master/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    list_id: listId,
+                    item_ids: itemsToDelete.map((item) => item.id),
+                }),
+            });
+
+            if (!response.ok) {
+                const message = await response.text();
+                throw new Error(message || 'Request failed');
+            }
+
+            const payload = await response.json();
+            const masterList = payload.masterList || null;
+            setData((prev) => ({ ...prev, masterList }));
+
+            if (!masterList) {
+                setSelectedItemIds([]);
+            } else {
+                const refreshedLookup = buildItemLookup(masterList);
+                setSelectedItemIds((current) => current.filter((id) => refreshedLookup.has(id)));
+            }
+
+            itemsToDelete.forEach((item) => {
+                if (item && item.name) {
+                    addToast(`${item.name} deleted`);
+                }
+            });
+        } catch (error) {
+            console.error(error);
+            setMoveError('Unable to delete items. Try again.');
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -373,7 +438,7 @@ function App() {
                                 setMoveTarget(value);
                                 window.localStorage.setItem(MOVE_TARGET_STORAGE_KEY, value);
                             },
-                            disabled: moving,
+                            disabled: isBusy,
                         },
                         categoryOptions.map((option) =>
                             React.createElement(
@@ -398,9 +463,23 @@ function App() {
                     {
                         className: 'primary-btn',
                         type: 'submit',
-                        disabled: moving || !hasMoveOptions,
+                        disabled: isBusy || !hasMoveOptions,
                     },
                     moving ? 'Moving…' : moveButtonLabel
+                ),
+                React.createElement(
+                    'button',
+                    {
+                        className: 'danger-btn',
+                        type: 'button',
+                        onClick: handleDeleteSelected,
+                        disabled: isBusy,
+                    },
+                    deleting
+                        ? 'Deleting…'
+                        : totalSelected > 1
+                        ? `Delete ${totalSelected} items`
+                        : 'Delete item'
                 ),
                 React.createElement(
                     'button',
@@ -408,7 +487,7 @@ function App() {
                         className: 'secondary-btn',
                         type: 'button',
                         onClick: () => setSelectedItemIds([]),
-                        disabled: moving,
+                        disabled: isBusy,
                     },
                     'Clear selection'
                 )
