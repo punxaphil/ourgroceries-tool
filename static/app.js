@@ -1,19 +1,67 @@
-const { useEffect, useState } = React;
+const { useCallback, useEffect, useMemo, useRef, useState } = React;
 const HASH_MASTER = '#/master';
 const HASH_LISTS = '#/lists';
+const MOVE_TARGET_STORAGE_KEY = 'lastMoveCategoryId';
 
 const resolveViewFromHash = (hash) => (hash === HASH_MASTER ? 'master' : 'lists');
+
+const buildItemLookup = (masterList) => {
+    const lookup = new Map();
+    if (!masterList) {
+        return lookup;
+    }
+    const sections = Array.isArray(masterList.sections) ? masterList.sections : [];
+    sections.forEach((section) => {
+        const items = Array.isArray(section.items) ? section.items : [];
+        items.forEach((item) => {
+            if (item && item.id) {
+                lookup.set(item.id, item);
+            }
+        });
+    });
+    return lookup;
+};
 
 function App() {
     const [data, setData] = useState({ lists: [], masterList: null });
     const [status, setStatus] = useState('Loading lists…');
     const [view, setView] = useState(resolveViewFromHash(window.location.hash));
     const [loading, setLoading] = useState(true);
+    const [selectedItemIds, setSelectedItemIds] = useState([]);
+    const [moveTarget, setMoveTarget] = useState('');
+    const [moving, setMoving] = useState(false);
+    const [moveError, setMoveError] = useState(null);
+    const [toasts, setToasts] = useState([]);
+    const [hasLoadedStoredTarget, setHasLoadedStoredTarget] = useState(false);
+    const toastTimeouts = useRef(new Map());
+
+    const addToast = useCallback((message) => {
+        const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        setToasts((current) => [...current, { id, message }]);
+        const timeoutId = window.setTimeout(() => {
+            setToasts((current) => current.filter((toast) => toast.id !== id));
+            toastTimeouts.current.delete(id);
+        }, 2800);
+        toastTimeouts.current.set(id, timeoutId);
+    }, []);
+
+    useEffect(() => () => {
+        toastTimeouts.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+        toastTimeouts.current.clear();
+    }, []);
 
     useEffect(() => {
         if (!window.location.hash) {
             window.location.hash = HASH_LISTS;
         }
+    }, []);
+
+    useEffect(() => {
+        const stored = window.localStorage.getItem(MOVE_TARGET_STORAGE_KEY);
+        if (stored !== null) {
+            setMoveTarget(stored);
+        }
+        setHasLoadedStoredTarget(true);
     }, []);
 
     useEffect(() => {
@@ -49,6 +97,163 @@ function App() {
         window.addEventListener('hashchange', handleHashChange);
         return () => window.removeEventListener('hashchange', handleHashChange);
     }, []);
+
+    useEffect(() => {
+        if (view !== 'master') {
+            setSelectedItemIds([]);
+            setMoveError(null);
+        }
+    }, [view]);
+
+    const itemLookup = useMemo(() => buildItemLookup(data.masterList), [data.masterList]);
+
+    useEffect(() => {
+        setSelectedItemIds((current) => {
+            if (current.length === 0) {
+                return current;
+            }
+            const filtered = current.filter((id) => itemLookup.has(id));
+            return filtered.length === current.length ? current : filtered;
+        });
+    }, [itemLookup]);
+
+    const selectedItems = useMemo(
+        () => selectedItemIds.map((id) => itemLookup.get(id)).filter((item) => Boolean(item)),
+        [itemLookup, selectedItemIds]
+    );
+
+    useEffect(() => {
+        if (selectedItems.length > 0) {
+            setMoveError(null);
+        }
+    }, [selectedItems]);
+
+    const categoryOptions = useMemo(() => {
+        if (!data.masterList || selectedItems.length === 0) {
+            return [];
+        }
+        const sections = Array.isArray(data.masterList.sections) ? data.masterList.sections : [];
+        const normalizedCurrentIds = new Set(
+            selectedItems.map((item) => (item && item.categoryId ? item.categoryId : ''))
+        );
+
+        const uniqueOptions = [];
+        const seen = new Set();
+
+        sections.forEach((section) => {
+            const id = section.id === 'uncategorized' ? '' : section.id;
+            const name = section.name || 'Uncategorized';
+            if (!seen.has(id)) {
+                seen.add(id);
+                uniqueOptions.push({ id, name });
+            }
+        });
+
+        let filteredOptions = uniqueOptions;
+
+        if (normalizedCurrentIds.size === 1) {
+            const [onlyId] = Array.from(normalizedCurrentIds);
+            filteredOptions = uniqueOptions.filter((option) => option.id !== onlyId);
+        }
+
+        if (
+            !filteredOptions.some((option) => option.id === '') &&
+            !(normalizedCurrentIds.size === 1 && normalizedCurrentIds.has(''))
+        ) {
+            filteredOptions = [...filteredOptions, { id: '', name: 'Uncategorized' }];
+        }
+
+        return filteredOptions;
+    }, [data.masterList, selectedItems]);
+
+    useEffect(() => {
+        if (!hasLoadedStoredTarget) {
+            return;
+        }
+        if (selectedItems.length === 0 || categoryOptions.length === 0) {
+            return;
+        }
+        if (!categoryOptions.some((option) => option.id === moveTarget)) {
+            const fallback = categoryOptions[0].id;
+            setMoveTarget(fallback);
+            window.localStorage.setItem(MOVE_TARGET_STORAGE_KEY, fallback);
+        }
+    }, [selectedItems, categoryOptions, moveTarget, hasLoadedStoredTarget]);
+
+    const hasMoveOptions = categoryOptions.length > 0;
+
+    const handleSelectItem = (itemId) => {
+        setMoveError(null);
+        setSelectedItemIds((current) => {
+            if (current.includes(itemId)) {
+                return current.filter((id) => id !== itemId);
+            }
+            return [...current, itemId];
+        });
+    };
+
+    const handleMoveSubmit = async (event) => {
+        event.preventDefault();
+        if (moving || !data.masterList || selectedItems.length === 0 || !hasMoveOptions) {
+            return;
+        }
+
+        const listId = data.masterList.id;
+        const targetCategoryId = moveTarget === '' ? null : moveTarget;
+        const itemsToMove = selectedItems.filter((item) => item && item.id && item.name);
+
+        if (itemsToMove.length === 0) {
+            return;
+        }
+
+        const targetCategoryName =
+            moveTarget === ''
+                ? 'Uncategorized'
+                : categoryOptions.find((option) => option.id === moveTarget)?.name || 'chosen category';
+
+        setMoving(true);
+        setMoveError(null);
+
+        try {
+            for (const item of itemsToMove) {
+                const response = await fetch('/api/master/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        list_id: listId,
+                        items: [{ item_id: item.id, item_name: item.name }],
+                        target_category_id: targetCategoryId,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const message = await response.text();
+                    throw new Error(message || 'Request failed');
+                }
+
+                const payload = await response.json();
+                const masterList = payload.masterList || null;
+                setData((prev) => ({ ...prev, masterList }));
+
+                if (!masterList) {
+                    setSelectedItemIds([]);
+                    break;
+                }
+
+                setSelectedItemIds((current) => current.filter((id) => id !== item.id));
+
+                const refreshedLookup = buildItemLookup(masterList);
+                setSelectedItemIds((current) => current.filter((id) => refreshedLookup.has(id)));
+
+                addToast(`${item.name} moved to ${targetCategoryName}`);
+            }
+        } catch (error) {
+            console.error(error);
+            setMoveError('Unable to move items. Try again.');
+        } finally {
+            setMoving(false);
+        }
+    };
 
     const listsView = React.createElement(
         React.Fragment,
@@ -101,12 +306,122 @@ function App() {
                     'ul',
                     null,
                     section.items.map((item) =>
-                        React.createElement('li', { key: item.id || item.name }, item.name)
+                        React.createElement(
+                            'li',
+                            {
+                                key: item.id || item.name,
+                                className: `selectable${selectedItemIds.includes(item.id) ? ' selected' : ''}`,
+                                onClick: () => handleSelectItem(item.id),
+                                onKeyDown: (event) => {
+                                    if (event.key === 'Enter' || event.key === ' ') {
+                                        event.preventDefault();
+                                        handleSelectItem(item.id);
+                                    }
+                                },
+                                tabIndex: 0,
+                                role: 'button',
+                            },
+                            item.name
+                        )
                     )
                 )
             )
         );
     }
+
+    const hasMovePanel = Boolean(!loading && !masterUnavailable && selectedItems.length > 0);
+
+    const totalSelected = selectedItems.length;
+    const selectionLabel = totalSelected === 1 ? 'Selected item' : 'Selected items';
+    const selectionTitle =
+        totalSelected === 1 ? selectedItems[0].name : `${totalSelected} items selected`;
+    const moveButtonLabel = totalSelected > 1 ? `Move ${totalSelected} items` : 'Move item';
+
+    const movePanel = hasMovePanel
+        ? React.createElement(
+            'form',
+            { className: 'move-panel', onSubmit: handleMoveSubmit },
+            React.createElement(
+                'header',
+                null,
+                React.createElement('p', { className: 'move-label' }, selectionLabel),
+                React.createElement('h2', { className: 'move-title' }, selectionTitle)
+            ),
+            totalSelected > 1 &&
+            React.createElement(
+                'ul',
+                { className: 'move-selected-list' },
+                selectedItems.map((item) =>
+                    React.createElement(
+                        'li',
+                        { key: item.id || item.name },
+                        item.name
+                    )
+                )
+            ),
+            React.createElement(
+                'label',
+                { className: 'move-field' },
+                'Move to category',
+                hasMoveOptions
+                    ? React.createElement(
+                        'select',
+                        {
+                            value: moveTarget,
+                            onChange: (event) => {
+                                const value = event.target.value;
+                                setMoveTarget(value);
+                                window.localStorage.setItem(MOVE_TARGET_STORAGE_KEY, value);
+                            },
+                            disabled: moving,
+                        },
+                        categoryOptions.map((option) =>
+                            React.createElement(
+                                'option',
+                                { key: option.id || 'uncategorized', value: option.id },
+                                option.name
+                            )
+                        )
+                    )
+                    : React.createElement(
+                        'p',
+                        { className: 'move-empty' },
+                        'No other categories available'
+                    )
+            ),
+            moveError && React.createElement('p', { className: 'status error' }, moveError),
+            React.createElement(
+                'div',
+                { className: 'move-actions' },
+                React.createElement(
+                    'button',
+                    {
+                        className: 'primary-btn',
+                        type: 'submit',
+                        disabled: moving || !hasMoveOptions,
+                    },
+                    moving ? 'Moving…' : moveButtonLabel
+                ),
+                React.createElement(
+                    'button',
+                    {
+                        className: 'secondary-btn',
+                        type: 'button',
+                        onClick: () => setSelectedItemIds([]),
+                        disabled: moving,
+                    },
+                    'Clear selection'
+                )
+            )
+        )
+        : null;
+
+    const masterBody = React.createElement(
+        'div',
+        { className: movePanel ? 'master-body has-panel' : 'master-body' },
+        React.createElement('div', { className: 'master-content' }, masterContent),
+        movePanel
+    );
 
     const masterView = React.createElement(
         React.Fragment,
@@ -136,14 +451,34 @@ function App() {
                         : `${data.masterList?.name || 'Master List'} (${data.masterList?.itemCount || 0} items)`
                 )
             ),
-            masterContent
+            masterBody
         )
     );
 
+    const toastElements =
+        toasts.length > 0
+            ? React.createElement(
+                'div',
+                { className: 'toast-container' },
+                toasts.map((toast) =>
+                    React.createElement(
+                        'div',
+                        { key: toast.id, className: 'toast' },
+                        toast.message
+                    )
+                )
+            )
+            : null;
+
     return React.createElement(
-        'main',
-        { className: 'container' },
-        view === 'master' ? masterView : listsView
+        React.Fragment,
+        null,
+        toastElements,
+        React.createElement(
+            'main',
+            { className: 'container' },
+            view === 'master' ? masterView : listsView
+        )
     );
 }
 
