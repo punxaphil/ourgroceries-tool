@@ -478,8 +478,8 @@ function App() {
                     deleting
                         ? 'Deleting…'
                         : totalSelected > 1
-                        ? `Delete ${totalSelected} items`
-                        : 'Delete item'
+                            ? `Delete ${totalSelected} items`
+                            : 'Delete item'
                 ),
                 React.createElement(
                     'button',
