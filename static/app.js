@@ -1,6 +1,4 @@
-const { useEffect, useMemo, useState } = React;
-
-const MAX_MASTER_ITEMS = 200;
+const { useEffect, useState } = React;
 const HASH_MASTER = '#/master';
 const HASH_LISTS = '#/lists';
 
@@ -52,30 +50,6 @@ function App() {
         return () => window.removeEventListener('hashchange', handleHashChange);
     }, []);
 
-    useEffect(() => {
-        if (view === 'master' && !data.masterList) {
-            setStatus('Master list unavailable.');
-        } else {
-            setStatus((current) =>
-                current === 'Master list unavailable.' ? null : current
-            );
-        }
-    }, [view, data.masterList]);
-
-    const masterPreview = useMemo(() => {
-        if (!data.masterList) {
-            return { items: [], note: null };
-        }
-        const items = Array.isArray(data.masterList.items)
-            ? data.masterList.items.slice(0, MAX_MASTER_ITEMS)
-            : [];
-        let note = null;
-        if (data.masterList.itemCount > MAX_MASTER_ITEMS) {
-            note = `Showing first ${MAX_MASTER_ITEMS} of ${data.masterList.itemCount} items.`;
-        }
-        return { items, note };
-    }, [data.masterList]);
-
     const listsView = React.createElement(
         React.Fragment,
         null,
@@ -103,9 +77,36 @@ function App() {
                     window.location.hash = HASH_MASTER;
                 },
             },
-            `View ${data.masterList.name || 'Master List'}`
+            `View ${data.masterList.name || 'Master List'} (${data.masterList.itemCount} items)`
         )
     );
+
+    const masterSections = data.masterList?.sections || [];
+    const masterUnavailable = !loading && !data.masterList;
+
+    let masterContent;
+    if (loading) {
+        masterContent = React.createElement('p', { className: 'status' }, 'Loading master list…');
+    } else if (masterUnavailable) {
+        masterContent = React.createElement('p', { className: 'status' }, status || 'Master list unavailable.');
+    } else if (masterSections.length === 0) {
+        masterContent = React.createElement('p', { className: 'status' }, 'No items in master list.');
+    } else {
+        masterContent = masterSections.map((section) =>
+            React.createElement(
+                'div',
+                { className: 'category-block', key: section.id || section.name },
+                React.createElement('h2', null, section.name),
+                React.createElement(
+                    'ul',
+                    null,
+                    section.items.map((item) =>
+                        React.createElement('li', { key: item.id || item.name }, item.name)
+                    )
+                )
+            )
+        );
+    }
 
     const masterView = React.createElement(
         React.Fragment,
@@ -130,24 +131,12 @@ function App() {
                 React.createElement(
                     'h1',
                     null,
-                    `${data.masterList?.name || 'Master List'} (${loading ? '…' : data.masterList?.itemCount || 0} items)`
-                ),
-                masterPreview.note &&
-                React.createElement('p', { className: 'hint' }, masterPreview.note)
-            ),
-            React.createElement(
-                'div',
-                { className: 'master-items' },
-                React.createElement(
-                    'ul',
-                    { className: 'master-list' },
                     loading
-                        ? React.createElement('li', { className: 'loading-row' }, 'Loading items…')
-                        : masterPreview.items.map((item) =>
-                            React.createElement('li', { key: item.id || item.name }, item.name)
-                        )
+                        ? (data.masterList?.name || 'Master List')
+                        : `${data.masterList?.name || 'Master List'} (${data.masterList?.itemCount || 0} items)`
                 )
-            )
+            ),
+            masterContent
         )
     );
 
