@@ -1,6 +1,6 @@
 import os
 from functools import lru_cache
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import uvicorn
 from dotenv import load_dotenv
@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from ourgroceries import InvalidLoginException, OurGroceries
+from pydantic import BaseModel
 
 app = FastAPI()
 
@@ -194,6 +195,48 @@ async def api_lists() -> JSONResponse:
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return JSONResponse(payload)
+
+
+class MoveItem(BaseModel):
+    item_id: str
+    item_name: str
+
+
+class MoveItemsRequest(BaseModel):
+    list_id: str
+    items: List[MoveItem]
+    target_category_id: Optional[str] = None
+
+
+@app.post("/api/master/move")
+async def api_move_master_item(request: MoveItemsRequest) -> JSONResponse:
+    if not request.items:
+        raise HTTPException(status_code=400, detail="No items provided for move operation")
+
+    try:
+        email, password = load_credentials()
+        client = OurGroceries(email, password)
+        await client.login()
+        for entry in request.items:
+            await client.change_item_on_list(
+                request.list_id,
+                entry.item_id,
+                request.target_category_id,
+                entry.item_name,
+            )
+    except InvalidLoginException as exc:
+        raise HTTPException(status_code=401, detail="OurGroceries login failed") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    try:
+        payload = await fetch_lists_payload()
+    except InvalidLoginException as exc:
+        raise HTTPException(status_code=401, detail="OurGroceries login failed") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return JSONResponse({"masterList": payload["masterList"]})
 
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
