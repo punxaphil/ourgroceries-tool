@@ -1,3 +1,4 @@
+import asyncio
 import os
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
@@ -12,6 +13,9 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
+_client_lock = asyncio.Lock()
+_client: Optional[OurGroceries] = None
+
 
 @lru_cache(maxsize=1)
 def load_credentials() -> tuple[str, str]:
@@ -24,6 +28,21 @@ def load_credentials() -> tuple[str, str]:
             "Set OURGROCERIES_EMAIL and OURGROCERIES_PASSWORD environment variables."
         )
     return email, password
+
+
+async def get_client() -> OurGroceries:
+    """Return an authenticated OurGroceries client, reusing the session when available."""
+    global _client
+    email, password = load_credentials()
+    async with _client_lock:
+        if _client is None:
+            _client = OurGroceries(email, password)
+
+        # Ensure the client holds valid session metadata.
+        if getattr(_client, "_session_key", None) is None:
+            await _client.login()
+
+        return _client
 
 
 def extract_shopping_lists(payload: Any) -> List[Dict[str, str]]:
@@ -169,9 +188,7 @@ def format_master_list(
 
 
 async def fetch_lists_payload() -> Dict[str, Any]:
-    email, password = load_credentials()
-    client = OurGroceries(email, password)
-    await client.login()
+    client = await get_client()
     overview = await client.get_my_lists()
     shopping_lists = extract_shopping_lists(overview)
     category_payload = await client.get_category_items()
@@ -219,9 +236,7 @@ async def api_move_master_item(request: MoveItemsRequest) -> JSONResponse:
         raise HTTPException(status_code=400, detail="No items provided for move operation")
 
     try:
-        email, password = load_credentials()
-        client = OurGroceries(email, password)
-        await client.login()
+        client = await get_client()
         for entry in request.items:
             await client.change_item_on_list(
                 request.list_id,
@@ -250,9 +265,7 @@ async def api_delete_master_items(request: DeleteItemsRequest) -> JSONResponse:
         raise HTTPException(status_code=400, detail="No items provided for delete operation")
 
     try:
-        email, password = load_credentials()
-        client = OurGroceries(email, password)
-        await client.login()
+        client = await get_client()
         for item_id in request.item_ids:
             await client.remove_item_from_list(request.list_id, item_id)
     except InvalidLoginException as exc:
