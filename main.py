@@ -1,6 +1,6 @@
 import os
 from functools import lru_cache
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import uvicorn
 from dotenv import load_dotenv
@@ -56,37 +56,114 @@ def extract_shopping_lists(payload: Any) -> List[Dict[str, str]]:
     return unique
 
 
-def format_master_list(payload: Any) -> Dict[str, Any]:
-    """Return master list metadata along with item summaries."""
+def build_category_index(payload: Any) -> Tuple[List[Dict[str, str]], Dict[str, str]]:
+    """Produce ordered category metadata and a lookup table."""
+    container = None
+    if isinstance(payload, dict):
+        container = payload.get("list") or payload.get("categoryList")
+
+    items = []
+    if isinstance(container, dict):
+        maybe_items = container.get("items")
+        if isinstance(maybe_items, list):
+            items = maybe_items
+
+    categories: List[Dict[str, str]] = []
+    lookup: Dict[str, str] = {}
+    for entry in items:
+        if not isinstance(entry, dict):
+            continue
+        cat_id = entry.get("id")
+        name = entry.get("value") or entry.get("name")
+        if not cat_id or not name:
+            continue
+        name_str = str(name)
+        record: Dict[str, str] = {
+            "id": str(cat_id),
+            "name": name_str,
+        }
+        sort_order = entry.get("sortOrder")
+        if isinstance(sort_order, str):
+            record["sortOrder"] = sort_order
+        categories.append(record)
+        lookup[str(cat_id)] = name_str
+
+    return categories, lookup
+
+
+def format_master_list(
+    payload: Any,
+    categories: List[Dict[str, str]],
+    category_lookup: Dict[str, str],
+) -> Dict[str, Any]:
+    """Return master list metadata grouped by category."""
     data = payload.get("list") if isinstance(payload, dict) else None
     if not isinstance(data, dict):
         raise RuntimeError("Unexpected master list response structure")
 
     fallback_name = "Master List"
     name = data.get("name") or fallback_name
-    items = data.get("items") if isinstance(data.get("items"), list) else []
+    raw_items = data.get("items")
+    items = raw_items if isinstance(raw_items, list) else []
 
-    item_summaries: List[Dict[str, Any]] = []
+    sections: List[Dict[str, Any]] = []
+    section_lookup: Dict[str, Dict[str, Any]] = {}
+
+    for category in categories:
+        section = {
+            "id": category["id"],
+            "name": category["name"],
+            "items": [],
+        }
+        if "sortOrder" in category:
+            section["sortOrder"] = category["sortOrder"]
+        section_lookup[category["id"]] = section
+        sections.append(section)
+
+    fallback_section = {
+        "id": "uncategorized",
+        "name": "Uncategorized",
+        "items": [],
+        "sortOrder": "~~~~",
+    }
+
+    flattened_items: List[Dict[str, Any]] = []
     for item in items:
         if not isinstance(item, dict):
             continue
         label = item.get("value") or item.get("name")
         if not label:
             continue
-        item_summaries.append(
-            {
-                "id": item.get("id"),
-                "name": label,
-                "categoryId": item.get("categoryId"),
-                "crossedOff": item.get("crossedOff", False),
-            }
-        )
+        category_id = item.get("categoryId")
+        category_id_str = str(category_id) if category_id else None
+        entry = {
+            "id": item.get("id"),
+            "name": str(label),
+            "categoryId": category_id_str,
+            "categoryName": category_lookup.get(category_id_str, "") if category_id_str else "",
+            "crossedOff": item.get("crossedOff", False),
+        }
+        flattened_items.append(entry)
+
+        section = section_lookup.get(category_id_str) if category_id_str else None
+        if section is None:
+            section = fallback_section
+        section["items"].append(entry)
+
+    if fallback_section["items"]:
+        sections.append(fallback_section)
+
+    sections.sort(key=lambda section: section.get("sortOrder") or "~~~~")
+    for section in sections:
+        section["items"].sort(key=lambda item: item["name"].lower())
+
+    sections.sort(key=lambda section: section.get("sortOrder") or "~~~~")
 
     return {
         "id": data.get("id"),
         "name": name,
-        "items": item_summaries,
-        "itemCount": len(item_summaries),
+        "itemCount": len(flattened_items),
+        "sections": sections,
     }
 
 
@@ -96,7 +173,10 @@ async def fetch_lists_payload() -> Dict[str, Any]:
     await client.login()
     overview = await client.get_my_lists()
     shopping_lists = extract_shopping_lists(overview)
-    master_list = format_master_list(await client.get_master_list())
+    category_payload = await client.get_category_items()
+    categories, category_lookup = build_category_index(category_payload)
+    master_payload = await client.get_master_list()
+    master_list = format_master_list(master_payload, categories, category_lookup)
     if not shopping_lists:
         raise RuntimeError("No shopping lists found in OurGroceries response")
     return {
