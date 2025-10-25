@@ -73,6 +73,17 @@ button {
     box-shadow: 0 10px 18px rgba(107, 114, 128, 0.2);
 }
 
+.danger-btn {
+    background: linear-gradient(135deg, #dc2626, #ef4444);
+    color: #fff;
+    box-shadow: 0 10px 20px rgba(220, 38, 38, 0.25);
+}
+
+.danger-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 24px rgba(220, 38, 38, 0.3);
+}
+
 .toast-container {
     position: fixed;
     top: 1rem;
