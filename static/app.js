@@ -23,6 +23,72 @@ const buildItemLookup = (masterList) => {
 };
 
 function App() {
+
+const cloneMasterList = (masterList) => {
+    if (!masterList) {
+        return masterList;
+    }
+    return {
+        ...masterList,
+        sections: Array.isArray(masterList.sections)
+            ? masterList.sections.map((section) => ({
+                  ...section,
+                  items: Array.isArray(section.items)
+                      ? section.items.map((item) => ({ ...item }))
+                      : [],
+              }))
+            : [],
+    };
+};
+
+const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, targetCategoryName) => {
+    const source = cloneMasterList(masterList);
+    if (!source) {
+        return source;
+    }
+
+    const movingIds = new Set(itemsToMove.map((item) => item.id));
+    const normalizedTargetId = targetCategoryId ?? '';
+    let targetSectionIndex = -1;
+
+    const updatedSections = source.sections.map((section, index) => {
+        const normalizedSectionId = section.id === 'uncategorized' ? '' : section.id;
+        if (normalizedSectionId === normalizedTargetId) {
+            targetSectionIndex = index;
+        }
+        const filteredItems = Array.isArray(section.items)
+            ? section.items.filter((item) => !movingIds.has(item.id))
+            : [];
+        return {
+            ...section,
+            items: filteredItems,
+        };
+    });
+
+    let targetSection;
+    if (targetSectionIndex === -1) {
+        targetSection = {
+            id: normalizedTargetId === '' ? 'uncategorized' : targetCategoryId,
+            name: targetCategoryName || 'Uncategorized',
+            items: [],
+        };
+        updatedSections.push(targetSection);
+        targetSectionIndex = updatedSections.length - 1;
+    } else {
+        targetSection = { ...updatedSections[targetSectionIndex] };
+        updatedSections[targetSectionIndex] = targetSection;
+    }
+
+    const movedItems = itemsToMove.map((item) => ({
+        ...item,
+        categoryId: targetCategoryId ?? null,
+    }));
+
+    targetSection.items = [...(targetSection.items || []), ...movedItems];
+
+    source.sections = updatedSections;
+    return source;
+};
     const [data, setData] = useState({ lists: [], masterList: null });
     const [status, setStatus] = useState('Loading lists…');
     const [view, setView] = useState(resolveViewFromHash(window.location.hash));
@@ -214,10 +280,29 @@ function App() {
                 ? 'Uncategorized'
                 : categoryOptions.find((option) => option.id === moveTarget)?.name || 'chosen category';
 
+        const previousMasterList = cloneMasterList(data.masterList);
+        const optimisticMasterList = buildOptimisticMasterList(
+            data.masterList,
+            itemsToMove,
+            targetCategoryId,
+            targetCategoryName
+        );
+
         setMoving(true);
         setMoveError(null);
 
+        if (optimisticMasterList) {
+            setData((prev) => ({ ...prev, masterList: optimisticMasterList }));
+        }
+        setSelectedItemIds([]);
+
+        itemsToMove.forEach((item) => {
+            addToast(`${item.name} moved to ${targetCategoryName}`);
+        });
+
         try {
+            let latestMasterList = null;
+
             for (const item of itemsToMove) {
                 const response = await fetch('/api/master/move', {
                     method: 'POST',
@@ -235,24 +320,20 @@ function App() {
                 }
 
                 const payload = await response.json();
-                const masterList = payload.masterList || null;
-                setData((prev) => ({ ...prev, masterList }));
+                latestMasterList = payload.masterList || latestMasterList;
+            }
 
-                if (!masterList) {
-                    setSelectedItemIds([]);
-                    break;
-                }
-
-                setSelectedItemIds((current) => current.filter((id) => id !== item.id));
-
-                const refreshedLookup = buildItemLookup(masterList);
-                setSelectedItemIds((current) => current.filter((id) => refreshedLookup.has(id)));
-
-                addToast(`${item.name} moved to ${targetCategoryName}`);
+            if (latestMasterList) {
+                setData((prev) => ({ ...prev, masterList: latestMasterList }));
             }
         } catch (error) {
             console.error(error);
-            setMoveError('Unable to move items. Try again.');
+            if (previousMasterList) {
+                setData((prev) => ({ ...prev, masterList: previousMasterList }));
+            }
+            setSelectedItemIds(itemsToMove.map((item) => item.id));
+            setMoveError('Unable to move items. Changes reverted.');
+            addToast('Move failed. Changes reverted.');
         } finally {
             setMoving(false);
         }
@@ -365,7 +446,10 @@ function App() {
         masterContent = masterSections.map((section) =>
             React.createElement(
                 'div',
-                { className: 'category-block', key: section.id || section.name },
+                {
+                    className: 'category-block',
+                    key: section.id || section.name,
+                },
                 React.createElement('h2', null, section.name),
                 React.createElement(
                     'ul',

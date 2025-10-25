@@ -4,8 +4,8 @@
 - [x] Install Required Extensions — No extensions needed.
 - [x] Compile the Project — `uv run python -m compileall main.py`.
 - [x] Create and Run Task — No VS Code tasks required.
-- [x] Launch the Project — Verified `uv run python main.py` serves API + React UI.
+- [x] Launch the Project — Verified `uv run python -m uvicorn main:app --reload` serves API + React UI.
 
 # Guidelines
 * No README or documentation needed.
-* After changes, always start the server.
+* After changes, always start the server with `uv run python -m uvicorn main:app --reload`.
