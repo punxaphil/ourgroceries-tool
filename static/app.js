@@ -1,9 +1,27 @@
 const { useCallback, useEffect, useMemo, useRef, useState } = React;
+
 const HASH_MASTER = '#/master';
 const HASH_LISTS = '#/lists';
-const MOVE_TARGET_STORAGE_KEY = 'lastMoveCategoryId';
+const PENDING_OPERATIONS_KEY = 'master-pending-operations';
+const FILTER_STATE_KEY = 'master-filter-state';
+const PENDING_FILTER_KEY = 'master-pending-filter';
+
+const CATEGORY_COLORS = [
+    '#fde68a',
+    '#bbf7d0',
+    '#bfdbfe',
+    '#fbcfe8',
+    '#ede9fe',
+    '#fee2e2',
+    '#dcfce7',
+    '#e0f2fe',
+];
 
 const resolveViewFromHash = (hash) => (hash === HASH_MASTER ? 'master' : 'lists');
+
+const normalizeCategoryId = (categoryId) => (categoryId === null || categoryId === undefined || categoryId === '' ? 'uncategorized' : categoryId);
+
+const denormalizeCategoryId = (categoryId) => (categoryId === 'uncategorized' ? null : categoryId);
 
 const buildItemLookup = (masterList) => {
     const lookup = new Map();
@@ -22,110 +40,87 @@ const buildItemLookup = (masterList) => {
     return lookup;
 };
 
+const TrashIcon = () =>
+    React.createElement(
+        'svg',
+        {
+            width: '14',
+            height: '16',
+            viewBox: '0 0 14 16',
+            fill: 'none',
+            xmlns: 'http://www.w3.org/2000/svg',
+            'aria-hidden': 'true',
+        },
+        React.createElement('path', {
+            d: 'M2.75 4.75h8.5l-.57 8.05a1.5 1.5 0 0 1-1.49 1.38H4.81a1.5 1.5 0 0 1-1.49-1.38L2.75 4.75Zm2.5-2.5h3.5l.5 1.5h-4.5l.5-1.5Zm-3 1.5h10',
+            stroke: 'currentColor',
+            strokeWidth: '1.4',
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+        }),
+        React.createElement('path', {
+            d: 'M6 7v4.25',
+            stroke: 'currentColor',
+            strokeWidth: '1.4',
+            strokeLinecap: 'round',
+        }),
+        React.createElement('path', {
+            d: 'M8 7v4.25',
+            stroke: 'currentColor',
+            strokeWidth: '1.4',
+            strokeLinecap: 'round',
+        })
+    );
+
 function App() {
-
-    const cloneMasterList = (masterList) => {
-        if (!masterList) {
-            return masterList;
-        }
-        return {
-            ...masterList,
-            sections: Array.isArray(masterList.sections)
-                ? masterList.sections.map((section) => ({
-                    ...section,
-                    items: Array.isArray(section.items)
-                        ? section.items.map((item) => ({ ...item }))
-                        : [],
-                }))
-                : [],
-        };
-    };
-
-    const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, targetCategoryName) => {
-        const source = cloneMasterList(masterList);
-        if (!source) {
-            return source;
-        }
-
-        const movingIds = new Set(itemsToMove.map((item) => item.id));
-        const normalizedTargetId = targetCategoryId ?? '';
-        let targetSectionIndex = -1;
-
-        const updatedSections = source.sections.map((section, index) => {
-            const normalizedSectionId = section.id === 'uncategorized' ? '' : section.id;
-            if (normalizedSectionId === normalizedTargetId) {
-                targetSectionIndex = index;
-            }
-            const filteredItems = Array.isArray(section.items)
-                ? section.items.filter((item) => !movingIds.has(item.id))
-                : [];
-            return {
-                ...section,
-                items: filteredItems,
-            };
-        });
-
-        let targetSection;
-        if (targetSectionIndex === -1) {
-            targetSection = {
-                id: normalizedTargetId === '' ? 'uncategorized' : targetCategoryId,
-                name: targetCategoryName || 'Uncategorized',
-                items: [],
-            };
-            updatedSections.push(targetSection);
-            targetSectionIndex = updatedSections.length - 1;
-        } else {
-            targetSection = { ...updatedSections[targetSectionIndex] };
-            updatedSections[targetSectionIndex] = targetSection;
-        }
-
-        const movedItems = itemsToMove.map((item) => ({
-            ...item,
-            categoryId: targetCategoryId ?? null,
-        }));
-
-        targetSection.items = [...(targetSection.items || []), ...movedItems];
-
-        source.sections = updatedSections;
-        return source;
-    };
-
-    const buildOptimisticDeleteMasterList = (masterList, itemsToDelete) => {
-        const source = cloneMasterList(masterList);
-        if (!source) {
-            return source;
-        }
-
-        const deleteIds = new Set(itemsToDelete.map((item) => item.id));
-
-        const updatedSections = source.sections.map((section) => {
-            const prunedItems = Array.isArray(section.items)
-                ? section.items.filter((item) => !deleteIds.has(item.id))
-                : [];
-            return {
-                ...section,
-                items: prunedItems,
-            };
-        });
-
-        source.sections = updatedSections;
-        const currentCount = typeof source.itemCount === 'number' ? source.itemCount : 0;
-        source.itemCount = Math.max(0, currentCount - itemsToDelete.length);
-
-        return source;
-    };
     const [data, setData] = useState({ lists: [], masterList: null });
     const [status, setStatus] = useState('Loading lists…');
     const [view, setView] = useState(resolveViewFromHash(window.location.hash));
     const [loading, setLoading] = useState(true);
-    const [selectedItemIds, setSelectedItemIds] = useState([]);
-    const [moveTarget, setMoveTarget] = useState('');
-    const [moving, setMoving] = useState(false);
-    const [deleting, setDeleting] = useState(false);
-    const [moveError, setMoveError] = useState(null);
+    const [selectedCategoryId, setSelectedCategoryId] = useState(null);
+    const [pendingMoves, setPendingMoves] = useState({});
+    const [pendingDeletes, setPendingDeletes] = useState({});
+    const [filterCategories, setFilterCategories] = useState(() => {
+        try {
+            const stored = window.localStorage.getItem(FILTER_STATE_KEY);
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                return new Set(parsed.categories || []);
+            }
+        } catch (error) {
+            console.error('Failed to load filter state:', error);
+        }
+        return new Set();
+    });
+    const [isFilterActive, setIsFilterActive] = useState(() => {
+        try {
+            const stored = window.localStorage.getItem(FILTER_STATE_KEY);
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                return parsed.isActive || false;
+            }
+        } catch (error) {
+            console.error('Failed to load filter state:', error);
+        }
+        return false;
+    });
+    const [showPendingOnly, setShowPendingOnly] = useState(() => {
+        try {
+            const stored = window.localStorage.getItem(PENDING_FILTER_KEY);
+            if (stored) {
+                return JSON.parse(stored) || false;
+            }
+        } catch (error) {
+            console.error('Failed to load pending filter state:', error);
+        }
+        return false;
+    });
     const [toasts, setToasts] = useState([]);
-    const [hasLoadedStoredTarget, setHasLoadedStoredTarget] = useState(false);
+    const [applyModalOpen, setApplyModalOpen] = useState(false);
+    const [applySteps, setApplySteps] = useState([]);
+    const [isApplying, setIsApplying] = useState(false);
     const toastTimeouts = useRef(new Map());
+    const hasLoadedPendingRef = useRef(false);
 
     const addToast = useCallback((message) => {
         const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -148,39 +143,33 @@ function App() {
         }
     }, []);
 
-    useEffect(() => {
-        const stored = window.localStorage.getItem(MOVE_TARGET_STORAGE_KEY);
-        if (stored !== null) {
-            setMoveTarget(stored);
+    const fetchLists = useCallback(async () => {
+        try {
+            setLoading(true);
+            const response = await fetch('/api/lists');
+            if (!response.ok) {
+                throw new Error(`Request failed with ${response.status}`);
+            }
+            const payload = await response.json();
+            const lists = Array.isArray(payload.lists) ? payload.lists : [];
+            const masterList = payload.masterList || null;
+            setData({ lists, masterList });
+            if (lists.length === 0 && (!masterList || masterList.itemCount === 0)) {
+                setStatus('No lists found.');
+            } else {
+                setStatus(null);
+            }
+        } catch (error) {
+            console.error(error);
+            setStatus('Unable to load lists. Check credentials and try again.');
+        } finally {
+            setLoading(false);
         }
-        setHasLoadedStoredTarget(true);
     }, []);
 
     useEffect(() => {
-        fetch('/api/lists')
-            .then((response) => {
-                if (!response.ok) {
-                    throw new Error(`Request failed with ${response.status}`);
-                }
-                return response.json();
-            })
-            .then((payload) => {
-                setLoading(false);
-                const lists = Array.isArray(payload.lists) ? payload.lists : [];
-                const masterList = payload.masterList || null;
-                setData({ lists, masterList });
-                if (lists.length === 0 && (!masterList || masterList.itemCount === 0)) {
-                    setStatus('No lists found.');
-                } else {
-                    setStatus(null);
-                }
-            })
-            .catch((error) => {
-                console.error(error);
-                setStatus('Unable to load lists. Check credentials and try again.');
-                setLoading(false);
-            });
-    }, []);
+        fetchLists();
+    }, [fetchLists]);
 
     useEffect(() => {
         const handleHashChange = () => {
@@ -190,245 +179,556 @@ function App() {
         return () => window.removeEventListener('hashchange', handleHashChange);
     }, []);
 
-    useEffect(() => {
-        if (view !== 'master') {
-            setSelectedItemIds([]);
-            setMoveError(null);
-        }
-    }, [view]);
+    const masterList = data.masterList;
+    const itemLookup = useMemo(() => buildItemLookup(masterList), [masterList]);
 
-    const itemLookup = useMemo(() => buildItemLookup(data.masterList), [data.masterList]);
-
-    useEffect(() => {
-        setSelectedItemIds((current) => {
-            if (current.length === 0) {
-                return current;
-            }
-            const filtered = current.filter((id) => itemLookup.has(id));
-            return filtered.length === current.length ? current : filtered;
-        });
-    }, [itemLookup]);
-
-    const selectedItems = useMemo(
-        () => selectedItemIds.map((id) => itemLookup.get(id)).filter((item) => Boolean(item)),
-        [itemLookup, selectedItemIds]
-    );
-
-    useEffect(() => {
-        if (selectedItems.length > 0) {
-            setMoveError(null);
-        }
-    }, [selectedItems]);
-
-    const categoryOptions = useMemo(() => {
-        if (!data.masterList || selectedItems.length === 0) {
+    const categoryList = useMemo(() => {
+        if (!masterList) {
             return [];
         }
-        const sections = Array.isArray(data.masterList.sections) ? data.masterList.sections : [];
-        const normalizedCurrentIds = new Set(
-            selectedItems.map((item) => (item && item.categoryId ? item.categoryId : ''))
-        );
+        const sections = Array.isArray(masterList.sections) ? masterList.sections : [];
+        return sections.map((section) => ({
+            id: normalizeCategoryId(section.id),
+            name: section.name || 'Uncategorized',
+        }));
+    }, [masterList]);
 
-        const uniqueOptions = [];
-        const seen = new Set();
-
-        sections.forEach((section) => {
-            const id = section.id === 'uncategorized' ? '' : section.id;
-            const name = section.name || 'Uncategorized';
-            if (!seen.has(id)) {
-                seen.add(id);
-                uniqueOptions.push({ id, name });
-            }
+    const categoryNameLookup = useMemo(() => {
+        const lookup = new Map();
+        categoryList.forEach((category) => {
+            lookup.set(category.id, category.name);
         });
+        return lookup;
+    }, [categoryList]);
 
-        let filteredOptions = uniqueOptions;
-
-        if (normalizedCurrentIds.size === 1) {
-            const [onlyId] = Array.from(normalizedCurrentIds);
-            filteredOptions = uniqueOptions.filter((option) => option.id !== onlyId);
-        }
-
-        if (
-            !filteredOptions.some((option) => option.id === '') &&
-            !(normalizedCurrentIds.size === 1 && normalizedCurrentIds.has(''))
-        ) {
-            filteredOptions = [...filteredOptions, { id: '', name: 'Uncategorized' }];
-        }
-
-        return filteredOptions;
-    }, [data.masterList, selectedItems]);
+    const categoryColorMap = useMemo(() => {
+        const map = {};
+        categoryList.forEach((category, index) => {
+            map[category.id] = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
+        });
+        return map;
+    }, [categoryList]);
 
     useEffect(() => {
-        if (!hasLoadedStoredTarget) {
+        if (selectedCategoryId === null && categoryList.length > 0) {
+            setSelectedCategoryId(categoryList[0].id);
+        }
+    }, [categoryList, selectedCategoryId]);
+
+    useEffect(() => {
+        if (!masterList || hasLoadedPendingRef.current) {
             return;
         }
-        if (selectedItems.length === 0 || categoryOptions.length === 0) {
-            return;
-        }
-        if (!categoryOptions.some((option) => option.id === moveTarget)) {
-            const fallback = categoryOptions[0].id;
-            setMoveTarget(fallback);
-            window.localStorage.setItem(MOVE_TARGET_STORAGE_KEY, fallback);
-        }
-    }, [selectedItems, categoryOptions, moveTarget, hasLoadedStoredTarget]);
+        const raw = window.localStorage.getItem(PENDING_OPERATIONS_KEY);
+        if (raw) {
+            try {
+                const parsed = JSON.parse(raw);
+                const storedMoves = Array.isArray(parsed?.moves) ? parsed.moves : [];
+                const storedDeletes = Array.isArray(parsed?.deletes) ? parsed.deletes : [];
 
-    const hasMoveOptions = categoryOptions.length > 0;
-
-    const handleSelectItem = (itemId) => {
-        setMoveError(null);
-        setSelectedItemIds((current) => {
-            if (current.includes(itemId)) {
-                return current.filter((id) => id !== itemId);
-            }
-            return [...current, itemId];
-        });
-    };
-
-    const handleMoveSubmit = async (event) => {
-        event.preventDefault();
-        if (!data.masterList || selectedItems.length === 0 || !hasMoveOptions) {
-            return;
-        }
-
-        const listId = data.masterList.id;
-        const targetCategoryId = moveTarget === '' ? null : moveTarget;
-        const itemsToMove = selectedItems.filter((item) => item && item.id && item.name);
-
-        if (itemsToMove.length === 0) {
-            return;
-        }
-
-        const targetCategoryName =
-            moveTarget === ''
-                ? 'Uncategorized'
-                : categoryOptions.find((option) => option.id === moveTarget)?.name || 'chosen category';
-
-        const previousMasterList = cloneMasterList(data.masterList);
-        const optimisticMasterList = buildOptimisticMasterList(
-            data.masterList,
-            itemsToMove,
-            targetCategoryId,
-            targetCategoryName
-        );
-
-        setMoving(true);
-        setMoveError(null);
-
-        if (optimisticMasterList) {
-            setData((prev) => ({ ...prev, masterList: optimisticMasterList }));
-        }
-        setSelectedItemIds([]);
-
-        itemsToMove.forEach((item) => {
-            addToast(`${item.name} moved to ${targetCategoryName}`);
-        });
-
-        try {
-            let latestMasterList = null;
-
-            for (const item of itemsToMove) {
-                const response = await fetch('/api/master/move', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        list_id: listId,
-                        items: [{ item_id: item.id, item_name: item.name }],
-                        target_category_id: targetCategoryId,
-                    }),
+                const nextMoves = {};
+                storedMoves.forEach((entry) => {
+                    if (!entry || !entry.itemId) {
+                        return;
+                    }
+                    const item = itemLookup.get(entry.itemId);
+                    if (!item) {
+                        return;
+                    }
+                    const targetId = normalizeCategoryId(entry.targetCategoryId);
+                    nextMoves[entry.itemId] = {
+                        itemId: entry.itemId,
+                        itemName: item.name,
+                        targetCategoryId: targetId,
+                        targetCategoryName: categoryNameLookup.get(targetId) || entry.targetCategoryName || 'Uncategorized',
+                    };
                 });
 
-                if (!response.ok) {
-                    const message = await response.text();
-                    throw new Error(message || 'Request failed');
+                const nextDeletes = {};
+                storedDeletes.forEach((entry) => {
+                    if (!entry || !entry.itemId) {
+                        return;
+                    }
+                    const item = itemLookup.get(entry.itemId);
+                    if (!item) {
+                        return;
+                    }
+                    nextDeletes[entry.itemId] = {
+                        itemId: entry.itemId,
+                        itemName: item.name,
+                    };
+                });
+
+                setPendingMoves(nextMoves);
+                setPendingDeletes(nextDeletes);
+
+                // If pending filter is active but no pending items, turn it off
+                if (Object.keys(nextMoves).length === 0 && Object.keys(nextDeletes).length === 0) {
+                    setShowPendingOnly(false);
                 }
-
-                const payload = await response.json();
-                latestMasterList = payload.masterList || latestMasterList;
+            } catch (error) {
+                console.error('Unable to restore pending operations:', error);
             }
-
-            if (latestMasterList) {
-                setData((prev) => ({ ...prev, masterList: latestMasterList }));
-            }
-        } catch (error) {
-            console.error(error);
-            if (previousMasterList) {
-                setData((prev) => ({ ...prev, masterList: previousMasterList }));
-            }
-            setSelectedItemIds(itemsToMove.map((item) => item.id));
-            setMoveError('Unable to move items. Changes reverted.');
-            addToast('Move failed. Changes reverted.');
-        } finally {
-            setMoving(false);
         }
-    };
+        hasLoadedPendingRef.current = true;
+    }, [masterList, itemLookup, categoryNameLookup]);
 
-    const handleDeleteSelected = async () => {
-        if (!data.masterList || selectedItems.length === 0) {
+    useEffect(() => {
+        if (!masterList) {
             return;
         }
-
-        const listId = data.masterList.id;
-        const itemsToDelete = selectedItems.filter((item) => item && item.id);
-        if (itemsToDelete.length === 0) {
-            return;
-        }
-
-        const confirmation =
-            itemsToDelete.length === 1
-                ? `Delete "${itemsToDelete[0].name}" from the master list?`
-                : `Delete ${itemsToDelete.length} items from the master list?`;
-
-        if (!window.confirm(confirmation)) {
-            return;
-        }
-
-        const previousMasterList = cloneMasterList(data.masterList);
-        const optimisticMasterList = buildOptimisticDeleteMasterList(data.masterList, itemsToDelete);
-
-        setDeleting(true);
-        setMoveError(null);
-
-        if (optimisticMasterList) {
-            setData((prev) => ({ ...prev, masterList: optimisticMasterList }));
-        }
-        setSelectedItemIds([]);
-
-        itemsToDelete.forEach((item) => {
-            if (item && item.name) {
-                addToast(`${item.name} deleted`);
-            }
+        setPendingMoves((prev) => {
+            let mutated = false;
+            const next = {};
+            Object.values(prev).forEach((move) => {
+                const item = itemLookup.get(move.itemId);
+                if (!item) {
+                    mutated = true;
+                    return;
+                }
+                const targetId = normalizeCategoryId(move.targetCategoryId);
+                const targetName = categoryNameLookup.get(targetId) || move.targetCategoryName || 'Uncategorized';
+                const updated = {
+                    itemId: move.itemId,
+                    itemName: item.name,
+                    targetCategoryId: targetId,
+                    targetCategoryName: targetName,
+                };
+                next[move.itemId] = updated;
+                if (!mutated && (
+                    item.name !== move.itemName ||
+                    targetId !== move.targetCategoryId ||
+                    targetName !== move.targetCategoryName
+                )) {
+                    mutated = true;
+                }
+            });
+            return mutated ? next : prev;
         });
 
-        try {
-            const response = await fetch('/api/master/delete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    list_id: listId,
-                    item_ids: itemsToDelete.map((item) => item.id),
-                }),
+        setPendingDeletes((prev) => {
+            let mutated = false;
+            const next = {};
+            Object.values(prev).forEach((entry) => {
+                const item = itemLookup.get(entry.itemId);
+                if (!item) {
+                    mutated = true;
+                    return;
+                }
+                const updated = {
+                    itemId: entry.itemId,
+                    itemName: item.name,
+                };
+                next[entry.itemId] = updated;
+                if (!mutated && item.name !== entry.itemName) {
+                    mutated = true;
+                }
+            });
+            return mutated ? next : prev;
+        });
+    }, [masterList, itemLookup, categoryNameLookup]);
+
+    useEffect(() => {
+        if (!hasLoadedPendingRef.current) {
+            return;
+        }
+        const payload = {
+            moves: Object.values(pendingMoves),
+            deletes: Object.values(pendingDeletes),
+        };
+        window.localStorage.setItem(PENDING_OPERATIONS_KEY, JSON.stringify(payload));
+    }, [pendingMoves, pendingDeletes]);
+
+    useEffect(() => {
+        const payload = {
+            categories: Array.from(filterCategories),
+            isActive: isFilterActive,
+        };
+        window.localStorage.setItem(FILTER_STATE_KEY, JSON.stringify(payload));
+    }, [filterCategories, isFilterActive]);
+
+    useEffect(() => {
+        window.localStorage.setItem(PENDING_FILTER_KEY, JSON.stringify(showPendingOnly));
+    }, [showPendingOnly]);
+
+    const handleSelectCategory = useCallback(
+        (categoryId) => {
+            if (isApplying) {
+                return;
+            }
+            setSelectedCategoryId(categoryId);
+        },
+        [isApplying]
+    );
+
+    const handleToggleMove = useCallback(
+        (item) => {
+            if (isApplying) {
+                return;
+            }
+            if (!selectedCategoryId) {
+                addToast('Select a category before tagging items.');
+                return;
+            }
+
+            const normalizedTarget = normalizeCategoryId(selectedCategoryId);
+            const currentCategory = normalizeCategoryId(item.categoryId);
+
+            setPendingDeletes((prev) => {
+                if (!prev[item.id]) {
+                    return prev;
+                }
+                const next = { ...prev };
+                delete next[item.id];
+                return next;
             });
 
-            if (!response.ok) {
-                const message = await response.text();
-                throw new Error(message || 'Request failed');
+            setPendingMoves((prev) => {
+                const existing = prev[item.id];
+
+                if (currentCategory === normalizedTarget && !existing) {
+                    addToast('Item is already in that category.');
+                    return prev;
+                }
+
+                if (existing && existing.targetCategoryId === normalizedTarget) {
+                    const next = { ...prev };
+                    delete next[item.id];
+                    return next;
+                }
+
+                const targetName = categoryNameLookup.get(normalizedTarget) || 'Uncategorized';
+                return {
+                    ...prev,
+                    [item.id]: {
+                        itemId: item.id,
+                        itemName: item.name,
+                        targetCategoryId: normalizedTarget,
+                        targetCategoryName: targetName,
+                    },
+                };
+            });
+        },
+        [isApplying, selectedCategoryId, categoryNameLookup, addToast]
+    );
+
+    const handleToggleDelete = useCallback(
+        (item) => {
+            if (isApplying) {
+                return;
+            }
+            setPendingMoves((prev) => {
+                if (!prev[item.id]) {
+                    return prev;
+                }
+                const next = { ...prev };
+                delete next[item.id];
+                return next;
+            });
+
+            setPendingDeletes((prev) => {
+                if (prev[item.id]) {
+                    const next = { ...prev };
+                    delete next[item.id];
+                    return next;
+                }
+                return {
+                    ...prev,
+                    [item.id]: {
+                        itemId: item.id,
+                        itemName: item.name,
+                    },
+                };
+            });
+        },
+        [isApplying]
+    );
+
+    const hasPendingChanges = useMemo(
+        () => Object.keys(pendingMoves).length > 0 || Object.keys(pendingDeletes).length > 0,
+        [pendingMoves, pendingDeletes]
+    );
+
+    const updateStepStatus = useCallback((index, status, errorMessage) => {
+        setApplySteps((prev) =>
+            prev.map((step, idx) =>
+                idx === index
+                    ? {
+                        ...step,
+                        status,
+                        errorMessage: errorMessage ?? step.errorMessage ?? null,
+                    }
+                    : step
+            )
+        );
+    }, []);
+
+    const performOperations = useCallback(
+        async (listId, moveEntries, deleteEntries) => {
+            const remainingMoveIds = new Set(moveEntries.map((entry) => entry.itemId));
+            const remainingDeleteIds = new Set(deleteEntries.map((entry) => entry.itemId));
+
+            let hadErrors = false;
+
+            const steps = [
+                ...moveEntries.map((entry) => ({
+                    key: `move-${entry.itemId}`,
+                    type: 'move',
+                    status: 'pending',
+                    itemId: entry.itemId,
+                    itemName: entry.itemName,
+                    targetCategoryId: entry.targetCategoryId,
+                    targetCategoryName: entry.targetCategoryName,
+                })),
+                ...deleteEntries.map((entry) => ({
+                    key: `delete-${entry.itemId}`,
+                    type: 'delete',
+                    status: 'pending',
+                    itemId: entry.itemId,
+                    itemName: entry.itemName,
+                })),
+            ];
+
+            for (let index = 0; index < steps.length; index += 1) {
+                const step = steps[index];
+                updateStepStatus(index, 'running');
+
+                try {
+                    if (step.type === 'move') {
+                        const response = await fetch('/api/master/move', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                list_id: listId,
+                                items: [{ item_id: step.itemId, item_name: step.itemName }],
+                                target_category_id: denormalizeCategoryId(step.targetCategoryId),
+                            }),
+                        });
+
+                        if (!response.ok) {
+                            const message = await response.text();
+                            throw new Error(message || 'Request failed');
+                        }
+
+                        const payload = await response.json();
+                        const masterList = payload.masterList || null;
+                        if (masterList) {
+                            setData((prev) => ({ ...prev, masterList }));
+                        }
+                        remainingMoveIds.delete(step.itemId);
+                    } else {
+                        const response = await fetch('/api/master/delete', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                list_id: listId,
+                                item_ids: [step.itemId],
+                            }),
+                        });
+
+                        if (!response.ok) {
+                            const message = await response.text();
+                            throw new Error(message || 'Request failed');
+                        }
+
+                        const payload = await response.json();
+                        const masterList = payload.masterList || null;
+                        if (masterList) {
+                            setData((prev) => ({ ...prev, masterList }));
+                        }
+                        remainingDeleteIds.delete(step.itemId);
+                    }
+
+                    updateStepStatus(index, 'success');
+                } catch (error) {
+                    console.error(error);
+                    hadErrors = true;
+                    const message = error instanceof Error ? error.message : 'Request failed';
+                    updateStepStatus(index, 'error', message);
+                }
             }
 
-            const payload = await response.json();
-            const masterList = payload.masterList || null;
-            setData((prev) => ({ ...prev, masterList }));
-        } catch (error) {
-            console.error(error);
-            if (previousMasterList) {
-                setData((prev) => ({ ...prev, masterList: previousMasterList }));
+            setPendingMoves((prev) => {
+                if (remainingMoveIds.size === 0) {
+                    return {};
+                }
+                const next = {};
+                Object.values(prev).forEach((entry) => {
+                    if (remainingMoveIds.has(entry.itemId)) {
+                        next[entry.itemId] = entry;
+                    }
+                });
+                return next;
+            });
+
+            setPendingDeletes((prev) => {
+                if (remainingDeleteIds.size === 0) {
+                    return {};
+                }
+                const next = {};
+                Object.values(prev).forEach((entry) => {
+                    if (remainingDeleteIds.has(entry.itemId)) {
+                        next[entry.itemId] = entry;
+                    }
+                });
+                return next;
+            });
+
+            setIsApplying(false);
+
+            if (!hadErrors) {
+                await fetchLists();
+                setApplyModalOpen(false);
+                addToast('Changes applied successfully.');
+                if (showPendingOnly && remainingMoveIds.size === 0 && remainingDeleteIds.size === 0) {
+                    setShowPendingOnly(false);
+                }
+            } else {
+                addToast('Some changes failed. Review and try again.');
             }
-            setSelectedItemIds(itemsToDelete.map((item) => item.id));
-            setMoveError('Unable to delete items. Changes reverted.');
-            addToast('Delete failed. Changes reverted.');
-        } finally {
-            setDeleting(false);
+
+            return { hadErrors };
+        },
+        [updateStepStatus, fetchLists, addToast, showPendingOnly]
+    );
+
+    const handleApply = useCallback(async () => {
+        if (isApplying) {
+            return;
         }
-    };
+        if (!data.masterList) {
+            return;
+        }
+
+        const moveEntries = Object.values(pendingMoves);
+        const deleteEntries = Object.values(pendingDeletes);
+
+        if (moveEntries.length === 0 && deleteEntries.length === 0) {
+            return;
+        }
+
+        const steps = [
+            ...moveEntries.map((entry) => ({
+                key: `move-${entry.itemId}`,
+                type: 'move',
+                status: 'pending',
+                itemId: entry.itemId,
+                itemName: entry.itemName,
+                targetCategoryId: entry.targetCategoryId,
+                targetCategoryName: entry.targetCategoryName,
+            })),
+            ...deleteEntries.map((entry) => ({
+                key: `delete-${entry.itemId}`,
+                type: 'delete',
+                status: 'pending',
+                itemId: entry.itemId,
+                itemName: entry.itemName,
+            })),
+        ];
+
+        setApplySteps(steps);
+        setApplyModalOpen(true);
+    }, [isApplying, data.masterList, pendingMoves, pendingDeletes]);
+
+    const handleConfirmApply = useCallback(async () => {
+        if (isApplying || !data.masterList) {
+            return;
+        }
+
+        const moveEntries = Object.values(pendingMoves);
+        const deleteEntries = Object.values(pendingDeletes);
+
+        if (moveEntries.length === 0 && deleteEntries.length === 0) {
+            return;
+        }
+
+        setIsApplying(true);
+        await performOperations(data.masterList.id, moveEntries, deleteEntries);
+    }, [isApplying, data.masterList, pendingMoves, pendingDeletes, performOperations]);
+
+    const handleRemoveStep = useCallback((step) => {
+        if (isApplying) {
+            return;
+        }
+
+        if (step.type === 'move') {
+            setPendingMoves((prev) => {
+                const next = { ...prev };
+                delete next[step.itemId];
+                return next;
+            });
+        } else {
+            setPendingDeletes((prev) => {
+                const next = { ...prev };
+                delete next[step.itemId];
+                return next;
+            });
+        }
+
+        setApplySteps((prev) => prev.filter((s) => s.key !== step.key));
+
+        if (applySteps.length <= 1) {
+            setApplyModalOpen(false);
+        }
+    }, [isApplying, applySteps.length]);
+
+    const handleCloseModal = useCallback(() => {
+        if (isApplying) {
+            return;
+        }
+        setApplyModalOpen(false);
+    }, [isApplying]);
+
+    const handleToggleFilter = useCallback(() => {
+        setIsFilterActive((prev) => !prev);
+        if (showPendingOnly) {
+            setShowPendingOnly(false);
+        }
+    }, [showPendingOnly]);
+
+    const handleTogglePendingFilter = useCallback(() => {
+        setShowPendingOnly((prev) => !prev);
+        if (isFilterActive) {
+            setIsFilterActive(false);
+        }
+    }, [isFilterActive]);
+
+    const masterSections = masterList?.sections || [];
+    const masterUnavailable = !loading && !masterList;
+
+    const filteredSections = useMemo(() => {
+        if (showPendingOnly) {
+            const pendingItemIds = new Set([
+                ...Object.keys(pendingMoves),
+                ...Object.keys(pendingDeletes),
+            ]);
+
+            if (pendingItemIds.size === 0) {
+                return [];
+            }
+
+            return masterSections
+                .map((section) => {
+                    const filteredItems = section.items.filter((item) => pendingItemIds.has(item.id));
+                    if (filteredItems.length === 0) {
+                        return null;
+                    }
+                    return {
+                        ...section,
+                        items: filteredItems,
+                    };
+                })
+                .filter(Boolean);
+        }
+
+        if (!isFilterActive || filterCategories.size === 0) {
+            return masterSections;
+        }
+        return masterSections.filter((section) => {
+            const categoryId = normalizeCategoryId(section.id);
+            return filterCategories.has(categoryId);
+        });
+    }, [isFilterActive, filterCategories, masterSections, showPendingOnly, pendingMoves, pendingDeletes]);
 
     const listsView = React.createElement(
         React.Fragment,
@@ -461,156 +761,138 @@ function App() {
         )
     );
 
-    const masterSections = data.masterList?.sections || [];
-    const masterUnavailable = !loading && !data.masterList;
-
     let masterContent;
     if (loading) {
         masterContent = React.createElement('p', { className: 'status' }, 'Loading master list…');
     } else if (masterUnavailable) {
         masterContent = React.createElement('p', { className: 'status' }, status || 'Master list unavailable.');
-    } else if (masterSections.length === 0) {
-        masterContent = React.createElement('p', { className: 'status' }, 'No items in master list.');
+    } else if (filteredSections.length === 0) {
+        const message = showPendingOnly
+            ? 'No items selected for move or deletion.'
+            : isFilterActive
+                ? 'No items match the selected filters.'
+                : 'No items in master list.';
+        masterContent = React.createElement('p', { className: 'status' }, message);
     } else {
-        masterContent = masterSections.map((section) =>
+        masterContent = filteredSections.map((section) =>
             React.createElement(
                 'div',
-                {
-                    className: 'category-block',
-                    key: section.id || section.name,
-                },
+                { className: 'category-block', key: section.id || section.name },
                 React.createElement('h2', null, section.name),
                 React.createElement(
                     'ul',
                     { className: 'category-items' },
-                    section.items.map((item) =>
-                        React.createElement(
+                    section.items.map((item) => {
+                        const pendingMove = pendingMoves[item.id];
+                        const pendingDelete = Boolean(pendingDeletes[item.id]);
+                        const moveColor = pendingMove ? categoryColorMap[pendingMove.targetCategoryId] : null;
+                        const itemClasses = [
+                            'category-item',
+                            pendingMove ? 'pending-move' : '',
+                            pendingDelete ? 'pending-delete' : '',
+                        ]
+                            .filter(Boolean)
+                            .join(' ');
+
+                        return React.createElement(
                             'li',
                             {
                                 key: item.id || item.name,
-                                className: `selectable${selectedItemIds.includes(item.id) ? ' selected' : ''}`,
-                                onClick: () => handleSelectItem(item.id),
-                                onKeyDown: (event) => {
-                                    if (event.key === 'Enter' || event.key === ' ') {
-                                        event.preventDefault();
-                                        handleSelectItem(item.id);
-                                    }
-                                },
-                                tabIndex: 0,
-                                role: 'button',
+                                className: itemClasses,
+                                style: pendingMove ? { '--pending-color': moveColor } : undefined,
                             },
-                            item.name
-                        )
-                    )
+                            React.createElement(
+                                'button',
+                                {
+                                    type: 'button',
+                                    className: 'item-main',
+                                    onClick: () => handleToggleMove(item),
+                                    disabled: isApplying,
+                                },
+                                React.createElement('span', { className: 'item-name' }, item.name),
+                                pendingMove &&
+                                React.createElement(
+                                    'span',
+                                    {
+                                        className: 'item-tag',
+                                        style: { backgroundColor: moveColor || '#e5e7eb' },
+                                    },
+                                    `Move to ${pendingMove.targetCategoryName}`
+                                ),
+                                pendingDelete &&
+                                React.createElement(
+                                    'span',
+                                    { className: 'item-tag delete' },
+                                    'Delete'
+                                )
+                            ),
+                            React.createElement(
+                                'button',
+                                {
+                                    type: 'button',
+                                    className: 'item-trash',
+                                    'aria-label': pendingDelete ? 'Undo delete' : 'Mark for deletion',
+                                    onClick: (event) => {
+                                        event.stopPropagation();
+                                        handleToggleDelete(item);
+                                    },
+                                    disabled: isApplying,
+                                },
+                                React.createElement(TrashIcon, null)
+                            )
+                        );
+                    })
                 )
             )
         );
     }
 
-    const hasMovePanel = Boolean(!loading && !masterUnavailable && selectedItems.length > 0);
-
-    const totalSelected = selectedItems.length;
-    const selectionLabel = totalSelected === 1 ? 'Selected item' : 'Selected items';
-    const selectionTitle =
-        totalSelected === 1 ? selectedItems[0].name : `${totalSelected} items selected`;
-    const moveButtonLabel = totalSelected > 1 ? `Move ${totalSelected} items` : 'Move item';
-
-    const movePanel = hasMovePanel
-        ? React.createElement(
-            'form',
-            { className: 'move-panel', onSubmit: handleMoveSubmit },
-            React.createElement(
-                'header',
-                null,
-                React.createElement('p', { className: 'move-label' }, selectionLabel),
-                React.createElement('h2', { className: 'move-title' }, selectionTitle)
-            ),
-            totalSelected > 1 &&
-            React.createElement(
-                'ul',
-                { className: 'move-selected-list' },
-                selectedItems.map((item) =>
+    const categorySidebar = React.createElement(
+        'aside',
+        { className: 'category-sidebar' },
+        !loading && React.createElement('h3', null, 'Move to category'),
+        React.createElement(
+            'ul',
+            { className: 'category-list' },
+            categoryList.map((category) => {
+                const color = categoryColorMap[category.id];
+                const isSelected = category.id === selectedCategoryId;
+                const isFiltered = filterCategories.has(category.id);
+                return React.createElement(
+                    'li',
+                    { key: category.id },
                     React.createElement(
-                        'li',
-                        { key: item.id || item.name },
-                        item.name
-                    )
-                )
-            ),
-            React.createElement(
-                'label',
-                { className: 'move-field' },
-                'Move to category',
-                hasMoveOptions
-                    ? React.createElement(
-                        'select',
+                        'button',
                         {
-                            value: moveTarget,
-                            onChange: (event) => {
-                                const value = event.target.value;
-                                setMoveTarget(value);
-                                window.localStorage.setItem(MOVE_TARGET_STORAGE_KEY, value);
+                            type: 'button',
+                            className: `category-chip${isSelected ? ' selected' : ''}${isFiltered ? ' filtered' : ''}`,
+                            style: { backgroundColor: color },
+                            onClick: () => handleSelectCategory(category.id),
+                            disabled: isApplying,
+                            onDoubleClick: () => {
+                                setFilterCategories((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(category.id)) {
+                                        next.delete(category.id);
+                                    } else {
+                                        next.add(category.id);
+                                    }
+                                    return next;
+                                });
                             },
-                            disabled: !hasMoveOptions,
                         },
-                        categoryOptions.map((option) =>
-                            React.createElement(
-                                'option',
-                                { key: option.id || 'uncategorized', value: option.id },
-                                option.name
-                            )
-                        )
+                        category.name
                     )
-                    : React.createElement(
-                        'p',
-                        { className: 'move-empty' },
-                        'No other categories available'
-                    )
-            ),
-            moveError && React.createElement('p', { className: 'status error' }, moveError),
-            React.createElement(
-                'div',
-                { className: 'move-actions' },
-                React.createElement(
-                    'button',
-                    {
-                        className: 'primary-btn',
-                        type: 'submit',
-                        disabled: !hasMoveOptions,
-                    },
-                    moving ? 'Moving…' : moveButtonLabel
-                ),
-                React.createElement(
-                    'button',
-                    {
-                        className: 'danger-btn',
-                        type: 'button',
-                        onClick: handleDeleteSelected,
-                    },
-                    deleting
-                        ? 'Deleting…'
-                        : totalSelected > 1
-                            ? `Delete ${totalSelected} items`
-                            : 'Delete item'
-                ),
-                React.createElement(
-                    'button',
-                    {
-                        className: 'secondary-btn',
-                        type: 'button',
-                        onClick: () => setSelectedItemIds([]),
-                    },
-                    'Clear selection'
-                )
-            )
+                );
+            })
         )
-        : null;
+    );
 
     const masterBody = React.createElement(
         'div',
-        { className: movePanel ? 'master-body has-panel' : 'master-body' },
+        { className: 'master-layout' },
         React.createElement('div', { className: 'master-content' }, masterContent),
-        movePanel
+        categorySidebar
     );
 
     const masterView = React.createElement(
@@ -634,11 +916,37 @@ function App() {
                 'header',
                 { className: 'master-header' },
                 React.createElement(
-                    'h1',
-                    null,
-                    loading
-                        ? (data.masterList?.name || 'Master List')
-                        : `${data.masterList?.name || 'Master List'} (${data.masterList?.itemCount || 0} items)`
+                    'div',
+                    { className: 'master-title-row' },
+                    React.createElement(
+                        'h1',
+                        null,
+                        loading
+                            ? (data.masterList?.name || 'Master List')
+                            : `${data.masterList?.name || 'Master List'} (${data.masterList?.itemCount || 0} items)`
+                    ),
+                    !loading && React.createElement(
+                        'button',
+                        {
+                            type: 'button',
+                            className: `filter-btn${isFilterActive ? ' active' : ''}`,
+                            onClick: handleToggleFilter,
+                            disabled: filterCategories.size === 0,
+                            title: isFilterActive ? 'Hide filter' : 'Show only double-clicked categories',
+                        },
+                        isFilterActive ? '✓ Filter' : 'Filter'
+                    ),
+                    !loading && React.createElement(
+                        'button',
+                        {
+                            type: 'button',
+                            className: `filter-btn${showPendingOnly ? ' active' : ''}`,
+                            onClick: handleTogglePendingFilter,
+                            disabled: Object.keys(pendingMoves).length === 0 && Object.keys(pendingDeletes).length === 0,
+                            title: showPendingOnly ? 'Show all items' : 'Show only items selected for move/deletion',
+                        },
+                        showPendingOnly ? '✓ Pending' : 'Pending'
+                    )
                 )
             ),
             masterBody
@@ -660,14 +968,134 @@ function App() {
             )
             : null;
 
+    const applyButton = view === 'master' && hasPendingChanges
+        ? React.createElement(
+            'button',
+            {
+                type: 'button',
+                className: 'apply-floating-btn',
+                onClick: handleApply,
+                disabled: isApplying,
+            },
+            isApplying ? 'Applying…' : 'Apply changes'
+        )
+        : null;
+
+    const applyModal = applyModalOpen
+        ? React.createElement(
+            'div',
+            { className: 'apply-modal-backdrop' },
+            React.createElement(
+                'div',
+                { className: 'apply-modal' },
+                React.createElement('h2', null, isApplying ? 'Applying changes…' : 'Changes summary'),
+                !isApplying && React.createElement(
+                    'div',
+                    { className: 'apply-summary-counts' },
+                    `${Object.keys(pendingMoves).length} move${Object.keys(pendingMoves).length !== 1 ? 's' : ''}, ${Object.keys(pendingDeletes).length} delete${Object.keys(pendingDeletes).length !== 1 ? 's' : ''}`
+                ),
+                React.createElement(
+                    'ul',
+                    { className: 'apply-progress-list' },
+                    applySteps.map((step) =>
+                        React.createElement(
+                            'li',
+                            {
+                                key: step.key,
+                                className: `status-${step.status}`,
+                            },
+                            React.createElement(
+                                'div',
+                                { className: 'apply-progress-content' },
+                                React.createElement(
+                                    'div',
+                                    { className: 'apply-progress-text' },
+                                    step.type === 'move'
+                                        ? `Move "${step.itemName}" to ${step.targetCategoryName}`
+                                        : `Delete "${step.itemName}"`
+                                ),
+                                React.createElement(
+                                    'span',
+                                    { className: 'apply-status-label' },
+                                    step.status === 'pending'
+                                        ? 'Pending'
+                                        : step.status === 'running'
+                                            ? 'In progress'
+                                            : step.status === 'success'
+                                                ? 'Done'
+                                                : 'Failed'
+                                ),
+                                step.status === 'error' && step.errorMessage
+                                    ? React.createElement('p', { className: 'apply-error' }, step.errorMessage)
+                                    : null
+                            ),
+                            !isApplying && step.status === 'pending' &&
+                            React.createElement(
+                                'button',
+                                {
+                                    type: 'button',
+                                    className: 'remove-step-btn',
+                                    onClick: () => handleRemoveStep(step),
+                                    'aria-label': 'Remove',
+                                },
+                                '×'
+                            )
+                        )
+                    )
+                ),
+                React.createElement(
+                    'div',
+                    { className: 'apply-modal-actions' },
+                    !isApplying
+                        ? React.createElement(
+                            React.Fragment,
+                            null,
+                            React.createElement(
+                                'button',
+                                {
+                                    type: 'button',
+                                    className: 'secondary-btn',
+                                    onClick: handleCloseModal,
+                                },
+                                'Cancel'
+                            ),
+                            React.createElement(
+                                'button',
+                                {
+                                    type: 'button',
+                                    className: 'primary-btn',
+                                    onClick: handleConfirmApply,
+                                },
+                                'Confirm & Apply'
+                            )
+                        )
+                        : null,
+                    isApplying &&
+                    applySteps.every((s) => s.status === 'success' || s.status === 'error') &&
+                    React.createElement(
+                        'button',
+                        {
+                            type: 'button',
+                            className: 'primary-btn',
+                            onClick: handleCloseModal,
+                        },
+                        'Close'
+                    )
+                )
+            )
+        )
+        : null;
+
     return React.createElement(
         React.Fragment,
         null,
         toastElements,
+        applyModal,
         React.createElement(
             'main',
             { className: 'container' },
-            view === 'master' ? masterView : listsView
+            view === 'master' ? masterView : listsView,
+            applyButton
         )
     );
 }
