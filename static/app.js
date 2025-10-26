@@ -24,71 +24,96 @@ const buildItemLookup = (masterList) => {
 
 function App() {
 
-const cloneMasterList = (masterList) => {
-    if (!masterList) {
-        return masterList;
-    }
-    return {
-        ...masterList,
-        sections: Array.isArray(masterList.sections)
-            ? masterList.sections.map((section) => ({
-                  ...section,
-                  items: Array.isArray(section.items)
-                      ? section.items.map((item) => ({ ...item }))
-                      : [],
-              }))
-            : [],
-    };
-};
-
-const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, targetCategoryName) => {
-    const source = cloneMasterList(masterList);
-    if (!source) {
-        return source;
-    }
-
-    const movingIds = new Set(itemsToMove.map((item) => item.id));
-    const normalizedTargetId = targetCategoryId ?? '';
-    let targetSectionIndex = -1;
-
-    const updatedSections = source.sections.map((section, index) => {
-        const normalizedSectionId = section.id === 'uncategorized' ? '' : section.id;
-        if (normalizedSectionId === normalizedTargetId) {
-            targetSectionIndex = index;
+    const cloneMasterList = (masterList) => {
+        if (!masterList) {
+            return masterList;
         }
-        const filteredItems = Array.isArray(section.items)
-            ? section.items.filter((item) => !movingIds.has(item.id))
-            : [];
         return {
-            ...section,
-            items: filteredItems,
+            ...masterList,
+            sections: Array.isArray(masterList.sections)
+                ? masterList.sections.map((section) => ({
+                    ...section,
+                    items: Array.isArray(section.items)
+                        ? section.items.map((item) => ({ ...item }))
+                        : [],
+                }))
+                : [],
         };
-    });
+    };
 
-    let targetSection;
-    if (targetSectionIndex === -1) {
-        targetSection = {
-            id: normalizedTargetId === '' ? 'uncategorized' : targetCategoryId,
-            name: targetCategoryName || 'Uncategorized',
-            items: [],
-        };
-        updatedSections.push(targetSection);
-        targetSectionIndex = updatedSections.length - 1;
-    } else {
-        targetSection = { ...updatedSections[targetSectionIndex] };
-        updatedSections[targetSectionIndex] = targetSection;
-    }
+    const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, targetCategoryName) => {
+        const source = cloneMasterList(masterList);
+        if (!source) {
+            return source;
+        }
 
-    const movedItems = itemsToMove.map((item) => ({
-        ...item,
-        categoryId: targetCategoryId ?? null,
-    }));
+        const movingIds = new Set(itemsToMove.map((item) => item.id));
+        const normalizedTargetId = targetCategoryId ?? '';
+        let targetSectionIndex = -1;
 
-    targetSection.items = [...(targetSection.items || []), ...movedItems];
+        const updatedSections = source.sections.map((section, index) => {
+            const normalizedSectionId = section.id === 'uncategorized' ? '' : section.id;
+            if (normalizedSectionId === normalizedTargetId) {
+                targetSectionIndex = index;
+            }
+            const filteredItems = Array.isArray(section.items)
+                ? section.items.filter((item) => !movingIds.has(item.id))
+                : [];
+            return {
+                ...section,
+                items: filteredItems,
+            };
+        });
 
-    source.sections = updatedSections;
-    return source;
-};
+        let targetSection;
+        if (targetSectionIndex === -1) {
+            targetSection = {
+                id: normalizedTargetId === '' ? 'uncategorized' : targetCategoryId,
+                name: targetCategoryName || 'Uncategorized',
+                items: [],
+            };
+            updatedSections.push(targetSection);
+            targetSectionIndex = updatedSections.length - 1;
+        } else {
+            targetSection = { ...updatedSections[targetSectionIndex] };
+            updatedSections[targetSectionIndex] = targetSection;
+        }
+
+        const movedItems = itemsToMove.map((item) => ({
+            ...item,
+            categoryId: targetCategoryId ?? null,
+        }));
+
+        targetSection.items = [...(targetSection.items || []), ...movedItems];
+
+        source.sections = updatedSections;
+        return source;
+    };
+
+    const buildOptimisticDeleteMasterList = (masterList, itemsToDelete) => {
+        const source = cloneMasterList(masterList);
+        if (!source) {
+            return source;
+        }
+
+        const deleteIds = new Set(itemsToDelete.map((item) => item.id));
+
+        const updatedSections = source.sections.map((section) => {
+            const prunedItems = Array.isArray(section.items)
+                ? section.items.filter((item) => !deleteIds.has(item.id))
+                : [];
+            return {
+                ...section,
+                items: prunedItems,
+            };
+        });
+
+        source.sections = updatedSections;
+        const currentCount = typeof source.itemCount === 'number' ? source.itemCount : 0;
+        source.itemCount = Math.max(0, currentCount - itemsToDelete.length);
+
+        return source;
+    };
     const [data, setData] = useState({ lists: [], masterList: null });
     const [status, setStatus] = useState('Loading lists…');
     const [view, setView] = useState(resolveViewFromHash(window.location.hash));
@@ -101,8 +126,6 @@ const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, ta
     const [toasts, setToasts] = useState([]);
     const [hasLoadedStoredTarget, setHasLoadedStoredTarget] = useState(false);
     const toastTimeouts = useRef(new Map());
-
-    const isBusy = moving || deleting;
 
     const addToast = useCallback((message) => {
         const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -263,7 +286,7 @@ const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, ta
 
     const handleMoveSubmit = async (event) => {
         event.preventDefault();
-        if (isBusy || !data.masterList || selectedItems.length === 0 || !hasMoveOptions) {
+        if (!data.masterList || selectedItems.length === 0 || !hasMoveOptions) {
             return;
         }
 
@@ -340,7 +363,7 @@ const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, ta
     };
 
     const handleDeleteSelected = async () => {
-        if (isBusy || !data.masterList || selectedItems.length === 0) {
+        if (!data.masterList || selectedItems.length === 0) {
             return;
         }
 
@@ -359,8 +382,22 @@ const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, ta
             return;
         }
 
+        const previousMasterList = cloneMasterList(data.masterList);
+        const optimisticMasterList = buildOptimisticDeleteMasterList(data.masterList, itemsToDelete);
+
         setDeleting(true);
         setMoveError(null);
+
+        if (optimisticMasterList) {
+            setData((prev) => ({ ...prev, masterList: optimisticMasterList }));
+        }
+        setSelectedItemIds([]);
+
+        itemsToDelete.forEach((item) => {
+            if (item && item.name) {
+                addToast(`${item.name} deleted`);
+            }
+        });
 
         try {
             const response = await fetch('/api/master/delete', {
@@ -380,22 +417,14 @@ const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, ta
             const payload = await response.json();
             const masterList = payload.masterList || null;
             setData((prev) => ({ ...prev, masterList }));
-
-            if (!masterList) {
-                setSelectedItemIds([]);
-            } else {
-                const refreshedLookup = buildItemLookup(masterList);
-                setSelectedItemIds((current) => current.filter((id) => refreshedLookup.has(id)));
-            }
-
-            itemsToDelete.forEach((item) => {
-                if (item && item.name) {
-                    addToast(`${item.name} deleted`);
-                }
-            });
         } catch (error) {
             console.error(error);
-            setMoveError('Unable to delete items. Try again.');
+            if (previousMasterList) {
+                setData((prev) => ({ ...prev, masterList: previousMasterList }));
+            }
+            setSelectedItemIds(itemsToDelete.map((item) => item.id));
+            setMoveError('Unable to delete items. Changes reverted.');
+            addToast('Delete failed. Changes reverted.');
         } finally {
             setDeleting(false);
         }
@@ -522,7 +551,7 @@ const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, ta
                                 setMoveTarget(value);
                                 window.localStorage.setItem(MOVE_TARGET_STORAGE_KEY, value);
                             },
-                            disabled: isBusy,
+                            disabled: !hasMoveOptions,
                         },
                         categoryOptions.map((option) =>
                             React.createElement(
@@ -547,7 +576,7 @@ const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, ta
                     {
                         className: 'primary-btn',
                         type: 'submit',
-                        disabled: isBusy || !hasMoveOptions,
+                        disabled: !hasMoveOptions,
                     },
                     moving ? 'Moving…' : moveButtonLabel
                 ),
@@ -557,7 +586,6 @@ const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, ta
                         className: 'danger-btn',
                         type: 'button',
                         onClick: handleDeleteSelected,
-                        disabled: isBusy,
                     },
                     deleting
                         ? 'Deleting…'
@@ -571,7 +599,6 @@ const buildOptimisticMasterList = (masterList, itemsToMove, targetCategoryId, ta
                         className: 'secondary-btn',
                         type: 'button',
                         onClick: () => setSelectedItemIds([]),
-                        disabled: isBusy,
                     },
                     'Clear selection'
                 )
