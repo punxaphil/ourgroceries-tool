@@ -360,6 +360,33 @@ section {
     background: rgba(248, 113, 113, 0.2);
 }
 
+.item-rename {
+    margin: 0 0.5rem 0 0;
+    border-radius: 999px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(99, 102, 241, 0.12);
+    color: #4f46e5;
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    padding: 0;
+    transition: all 0.15s ease;
+}
+
+.item-rename:hover {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: rgba(99, 102, 241, 0.4);
+    transform: translateY(-1px);
+}
+
+.item-rename:disabled {
+    opacity: 0.5;
+    cursor: default;
+    background: rgba(99, 102, 241, 0.12);
+}
+
 .apply-floating-btn {
     position: fixed;
     right: 2rem;
@@ -520,6 +547,11 @@ section {
     margin: 0;
 }
 
+.rename-modal-actions .primary-btn,
+.rename-modal-actions .secondary-btn {
+    margin: 0;
+}
+
 .modal-close-btn {
     align-self: flex-end;
     margin: 0;
@@ -562,10 +594,58 @@ section {
     gap: 8px;
 }
 
-@media (min-width: 700px) {
+@media (min-width: 1050px) {
     .category-items {
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr 1fr 1fr;
     }
+}
+
+.rename-modal {
+    background: #fff;
+    border-radius: 16px;
+    padding: 2rem;
+    width: 90%;
+    max-width: 440px;
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+}
+
+.rename-modal h2 {
+    margin: 0 0 1.5rem;
+    font-size: 1.5rem;
+    color: #111827;
+}
+
+.rename-form-group {
+    margin-bottom: 1.5rem;
+}
+
+.rename-form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #374151;
+}
+
+.rename-input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 2px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.rename-input:focus {
+    outline: none;
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.rename-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.75rem;
 }
 
 @media (min-width: 1050px) {

@@ -72,6 +72,29 @@ const TrashIcon = () =>
         })
     );
 
+const PenIcon = () =>
+    React.createElement(
+        'svg',
+        {
+            width: '16',
+            height: '16',
+            viewBox: '0 0 16 16',
+            fill: 'none',
+            xmlns: 'http://www.w3.org/2000/svg',
+            'aria-hidden': 'true',
+        },
+        React.createElement('path', {
+            d: 'M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25a1.75 1.75 0 0 1 .445-.758l8.61-8.61Z',
+            fill: 'currentColor',
+        }),
+        React.createElement('path', {
+            d: 'M11.5 4.5 13.25 6.25',
+            stroke: 'white',
+            strokeWidth: '1.5',
+            strokeLinecap: 'round',
+        })
+    );
+
 function App() {
     const [data, setData] = useState({ lists: [], masterList: null });
     const [status, setStatus] = useState('Loading lists…');
@@ -119,6 +142,10 @@ function App() {
     const [applyModalOpen, setApplyModalOpen] = useState(false);
     const [applySteps, setApplySteps] = useState([]);
     const [isApplying, setIsApplying] = useState(false);
+    const [renameModalOpen, setRenameModalOpen] = useState(false);
+    const [renameTarget, setRenameTarget] = useState(null);
+    const [renameValue, setRenameValue] = useState('');
+    const [isRenaming, setIsRenaming] = useState(false);
     const toastTimeouts = useRef(new Map());
     const hasLoadedPendingRef = useRef(false);
 
@@ -693,6 +720,68 @@ function App() {
         }
     }, [isFilterActive]);
 
+    const handleOpenRename = useCallback((type, id, currentName) => {
+        setRenameTarget({ type, id, currentName });
+        setRenameValue(currentName);
+        setRenameModalOpen(true);
+    }, []);
+
+    const handleCloseRenameModal = useCallback(() => {
+        if (isRenaming) return;
+        setRenameModalOpen(false);
+        setRenameTarget(null);
+        setRenameValue('');
+        setIsRenaming(false);
+    }, [isRenaming]);
+
+    const handleSubmitRename = useCallback(async (event) => {
+        event.preventDefault();
+        if (!renameTarget || !renameValue.trim() || isRenaming) {
+            return;
+        }
+
+        const trimmedValue = renameValue.trim();
+        if (trimmedValue === renameTarget.currentName) {
+            handleCloseRenameModal();
+            return;
+        }
+
+        setIsRenaming(true);
+        try {
+            const endpoint = '/api/master/rename-item';
+            const body = { itemId: renameTarget.id, newName: trimmedValue };
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Rename failed');
+            }
+
+            addToast(`Renamed to "${trimmedValue}"`);
+
+            // Reload data
+            const listsResponse = await fetch('/api/lists');
+            if (listsResponse.ok) {
+                const payload = await listsResponse.json();
+                if (payload.masterList) {
+                    setData((prev) => ({ ...prev, masterList: payload.masterList }));
+                }
+            }
+
+            handleCloseRenameModal();
+        } catch (error) {
+            console.error('Rename error:', error);
+            addToast(error.message || 'Rename failed');
+        } finally {
+            setIsRenaming(false);
+        }
+    }, [renameTarget, renameValue, isRenaming, data.masterList, addToast, handleCloseRenameModal]);
+
     const masterSections = masterList?.sections || [];
     const masterUnavailable = !loading && !masterList;
 
@@ -825,6 +914,20 @@ function App() {
                                     { className: 'item-tag delete' },
                                     'Delete'
                                 )
+                            ),
+                            React.createElement(
+                                'button',
+                                {
+                                    type: 'button',
+                                    className: 'item-rename',
+                                    'aria-label': 'Rename item',
+                                    onClick: (event) => {
+                                        event.stopPropagation();
+                                        handleOpenRename('item', item.id, item.name);
+                                    },
+                                    disabled: isApplying,
+                                },
+                                React.createElement(PenIcon, null)
                             ),
                             React.createElement(
                                 'button',
@@ -1086,11 +1189,66 @@ function App() {
         )
         : null;
 
+    const renameModal = renameModalOpen && renameTarget
+        ? React.createElement(
+            'div',
+            { className: 'apply-modal-backdrop' },
+            React.createElement(
+                'div',
+                { className: 'rename-modal' },
+                React.createElement('h2', null, 'Rename Item'),
+                React.createElement(
+                    'form',
+                    { onSubmit: handleSubmitRename },
+                    React.createElement(
+                        'div',
+                        { className: 'rename-form-group' },
+                        React.createElement('label', { htmlFor: 'rename-input' }, 'New name:'),
+                        React.createElement('input', {
+                            id: 'rename-input',
+                            type: 'text',
+                            className: 'rename-input',
+                            value: renameValue,
+                            onChange: (e) => setRenameValue(e.target.value),
+                            autoFocus: true,
+                            required: true,
+                            disabled: isRenaming,
+                        })
+                    ),
+                    React.createElement(
+                        'div',
+                        { className: 'rename-modal-actions' },
+                        React.createElement(
+                            'button',
+                            {
+                                type: 'button',
+                                className: 'secondary-btn',
+                                onClick: handleCloseRenameModal,
+                                disabled: isRenaming,
+                            },
+                            'Cancel'
+                        ),
+                        React.createElement(
+                            'button',
+                            {
+                                type: 'submit',
+                                className: 'primary-btn',
+                                disabled: isRenaming || !renameValue.trim() || renameValue.trim() === renameTarget.currentName,
+                            },
+                            isRenaming ? 'Renaming…' : 'Rename'
+                        )
+                    )
+                )
+            )
+        )
+        : null;
+
     return React.createElement(
         React.Fragment,
         null,
         toastElements,
         applyModal,
+        renameModal,
         React.createElement(
             'main',
             { className: 'container' },
