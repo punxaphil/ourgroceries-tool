@@ -161,6 +161,9 @@ function App() {
   const [renameTarget, setRenameTarget] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [isRenaming, setIsRenaming] = useState(false);
+  const [createCategoryModalOpen, setCreateCategoryModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const toastTimeouts = useRef(new Map());
   const hasLoadedPendingRef = useRef(false);
   const categoryListRef = useRef(null);
@@ -623,66 +626,75 @@ function App() {
         })),
       ];
 
-      for (let index = 0; index < steps.length; index += 1) {
-        const step = steps[index];
-        updateStepStatus(index, "running");
+      const BATCH_SIZE = 5;
 
-        try {
-          if (step.type === "move") {
-            const response = await fetch("/api/master/move", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                list_id: listId,
-                items: [{ item_id: step.itemId, item_name: step.itemName }],
-                target_category_id: denormalizeCategoryId(
-                  step.targetCategoryId,
-                ),
-              }),
-            });
+      // Process steps in batches
+      for (let i = 0; i < steps.length; i += BATCH_SIZE) {
+        const batch = steps.slice(i, i + BATCH_SIZE);
+        const batchPromises = batch.map(async (step, batchIndex) => {
+          const index = i + batchIndex;
+          updateStepStatus(index, "running");
 
-            if (!response.ok) {
-              const message = await response.text();
-              throw new Error(message || "Request failed");
+          try {
+            if (step.type === "move") {
+              const response = await fetch("/api/master/move", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  list_id: listId,
+                  items: [{ item_id: step.itemId, item_name: step.itemName }],
+                  target_category_id: denormalizeCategoryId(
+                    step.targetCategoryId,
+                  ),
+                }),
+              });
+
+              if (!response.ok) {
+                const message = await response.text();
+                throw new Error(message || "Request failed");
+              }
+
+              const payload = await response.json();
+              const masterList = payload.masterList || null;
+              if (masterList) {
+                setData((prev) => ({ ...prev, masterList }));
+              }
+              remainingMoveIds.delete(step.itemId);
+            } else {
+              const response = await fetch("/api/master/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  list_id: listId,
+                  item_ids: [step.itemId],
+                }),
+              });
+
+              if (!response.ok) {
+                const message = await response.text();
+                throw new Error(message || "Request failed");
+              }
+
+              const payload = await response.json();
+              const masterList = payload.masterList || null;
+              if (masterList) {
+                setData((prev) => ({ ...prev, masterList }));
+              }
+              remainingDeleteIds.delete(step.itemId);
             }
 
-            const payload = await response.json();
-            const masterList = payload.masterList || null;
-            if (masterList) {
-              setData((prev) => ({ ...prev, masterList }));
-            }
-            remainingMoveIds.delete(step.itemId);
-          } else {
-            const response = await fetch("/api/master/delete", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                list_id: listId,
-                item_ids: [step.itemId],
-              }),
-            });
-
-            if (!response.ok) {
-              const message = await response.text();
-              throw new Error(message || "Request failed");
-            }
-
-            const payload = await response.json();
-            const masterList = payload.masterList || null;
-            if (masterList) {
-              setData((prev) => ({ ...prev, masterList }));
-            }
-            remainingDeleteIds.delete(step.itemId);
+            updateStepStatus(index, "success");
+          } catch (error) {
+            console.error(error);
+            hadErrors = true;
+            const message =
+              error instanceof Error ? error.message : "Request failed";
+            updateStepStatus(index, "error", message);
           }
+        });
 
-          updateStepStatus(index, "success");
-        } catch (error) {
-          console.error(error);
-          hadErrors = true;
-          const message =
-            error instanceof Error ? error.message : "Request failed";
-          updateStepStatus(index, "error", message);
-        }
+        // Wait for all operations in this batch to complete
+        await Promise.allSettled(batchPromises);
       }
 
       setPendingMoves((prev) => {
@@ -923,6 +935,109 @@ function App() {
     ],
   );
 
+  const handleOpenCreateCategory = useCallback(() => {
+    setNewCategoryName("");
+    setCreateCategoryModalOpen(true);
+  }, []);
+
+  const handleCloseCreateCategoryModal = useCallback(() => {
+    if (isCreatingCategory) return;
+    setCreateCategoryModalOpen(false);
+    setNewCategoryName("");
+    setIsCreatingCategory(false);
+  }, [isCreatingCategory]);
+
+  const handleSubmitCreateCategory = useCallback(
+    async (event) => {
+      event.preventDefault();
+      if (!newCategoryName.trim() || isCreatingCategory) {
+        return;
+      }
+
+      setIsCreatingCategory(true);
+      try {
+        const response = await fetch("/api/master/create-category", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: newCategoryName.trim() }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || "Create category failed");
+        }
+
+        addToast(`Category "${newCategoryName.trim()}" created`);
+
+        // Reload data
+        const listsResponse = await fetch("/api/lists");
+        if (listsResponse.ok) {
+          const payload = await listsResponse.json();
+          if (payload.masterList) {
+            setData((prev) => ({ ...prev, masterList: payload.masterList }));
+          }
+        }
+
+        handleCloseCreateCategoryModal();
+      } catch (error) {
+        console.error("Create category error:", error);
+        addToast(error.message || "Create category failed");
+      } finally {
+        setIsCreatingCategory(false);
+      }
+    },
+    [
+      newCategoryName,
+      isCreatingCategory,
+      addToast,
+      handleCloseCreateCategoryModal,
+    ],
+  );
+
+  const handleDeleteCategory = useCallback(
+    async (categoryId, categoryName) => {
+      if (isApplying) {
+        return;
+      }
+
+      if (
+        !confirm(
+          `Delete category "${categoryName}"? Items in this category will become uncategorized.`,
+        )
+      ) {
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/master/delete-category", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ categoryId }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || "Delete category failed");
+        }
+
+        addToast(`Category "${categoryName}" deleted`);
+
+        // Reload data
+        const listsResponse = await fetch("/api/lists");
+        if (listsResponse.ok) {
+          const payload = await listsResponse.json();
+          if (payload.masterList) {
+            setData((prev) => ({ ...prev, masterList: payload.masterList }));
+          }
+        }
+      } catch (error) {
+        console.error("Delete category error:", error);
+        addToast(error.message || "Delete category failed");
+      }
+    },
+    [isApplying, addToast],
+  );
+
   const masterSections = masterList?.sections || [];
   const masterUnavailable = !loading && !masterList;
 
@@ -1047,6 +1162,7 @@ function App() {
       status || "Master list unavailable.",
     );
   } else if (filteredSections.length === 0) {
+    const isFilterActive = filterCategories.size > 0;
     const message = showPendingOnly
       ? "No items selected for move or deletion."
       : isFilterActive
@@ -1080,6 +1196,21 @@ function App() {
             },
             React.createElement(PenIcon, null),
           ),
+          section.id !== "uncategorized" &&
+            React.createElement(
+              "button",
+              {
+                type: "button",
+                className: "category-delete-btn",
+                "aria-label": "Delete category",
+                onClick: (event) => {
+                  event.stopPropagation();
+                  handleDeleteCategory(section.id, section.name);
+                },
+                disabled: isApplying,
+              },
+              React.createElement(TrashIcon, null),
+            ),
         ),
         React.createElement(
           "ul",
@@ -1320,6 +1451,18 @@ function App() {
                 ? "✓ Show pending changes"
                 : "Show pending changes",
             ),
+          !loading &&
+            React.createElement(
+              "button",
+              {
+                type: "button",
+                className: "filter-btn",
+                onClick: handleOpenCreateCategory,
+                disabled: isApplying,
+                title: "Add a new category",
+              },
+              "Add Category",
+            ),
         ),
       ),
       masterBody,
@@ -1430,7 +1573,7 @@ function App() {
           React.createElement(
             "div",
             { className: "apply-modal-actions" },
-            !isApplying
+            !isApplying && applySteps.every((s) => s.status === "pending")
               ? React.createElement(
                   React.Fragment,
                   null,
@@ -1454,7 +1597,10 @@ function App() {
                   ),
                 )
               : null,
-            isApplying &&
+            (isApplying ||
+              applySteps.some(
+                (s) => s.status === "success" || s.status === "error",
+              )) &&
               applySteps.every(
                 (s) => s.status === "success" || s.status === "error",
               ) &&
@@ -1540,12 +1686,71 @@ function App() {
         )
       : null;
 
+  const createCategoryModal = createCategoryModalOpen
+    ? React.createElement(
+        "div",
+        { className: "apply-modal-backdrop" },
+        React.createElement(
+          "div",
+          { className: "rename-modal" },
+          React.createElement("h2", null, "Create Category"),
+          React.createElement(
+            "form",
+            { onSubmit: handleSubmitCreateCategory },
+            React.createElement(
+              "div",
+              { className: "rename-form-group" },
+              React.createElement(
+                "label",
+                { htmlFor: "create-category-input" },
+                "Category name:",
+              ),
+              React.createElement("input", {
+                id: "create-category-input",
+                type: "text",
+                className: "rename-input",
+                value: newCategoryName,
+                onChange: (e) => setNewCategoryName(e.target.value),
+                autoFocus: true,
+                required: true,
+                disabled: isCreatingCategory,
+              }),
+            ),
+            React.createElement(
+              "div",
+              { className: "rename-modal-actions" },
+              React.createElement(
+                "button",
+                {
+                  type: "button",
+                  className: "secondary-btn",
+                  onClick: handleCloseCreateCategoryModal,
+                  disabled: isCreatingCategory,
+                },
+                "Cancel",
+              ),
+              React.createElement(
+                "button",
+                {
+                  type: "submit",
+                  className: "primary-btn",
+                  disabled: isCreatingCategory || !newCategoryName.trim(),
+                },
+                isCreatingCategory ? "Creating…" : "Create",
+              ),
+            ),
+          ),
+        ),
+      )
+    : null;
+
   return React.createElement(
     React.Fragment,
     null,
     toastElements,
     applyModal,
     renameModal,
+    createCategoryModal,
     React.createElement(
       "main",
       { className: "container" },
