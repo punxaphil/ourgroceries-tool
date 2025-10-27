@@ -466,6 +466,18 @@ function App() {
     );
   }, [showPendingOnly]);
 
+  // Auto-disable pending filter when no pending operations remain
+  useEffect(() => {
+    if (
+      showPendingOnly &&
+      Object.keys(pendingMoves).length === 0 &&
+      Object.keys(pendingDeletes).length === 0
+    ) {
+      setShowPendingOnly(false);
+      addToast("No pending changes remaining - showing all items");
+    }
+  }, [showPendingOnly, pendingMoves, pendingDeletes, addToast]);
+
   const handleSelectCategory = useCallback(
     (categoryId) => {
       if (isApplying) {
@@ -818,8 +830,15 @@ function App() {
   }, [isApplying]);
 
   const handleTogglePendingFilter = useCallback(() => {
-    setShowPendingOnly((prev) => !prev);
-  }, []);
+    setShowPendingOnly((prev) => {
+      const newValue = !prev;
+      if (newValue && filterCategories.size > 0) {
+        // Clear category filters when enabling pending filter
+        setFilterCategories(new Set());
+      }
+      return newValue;
+    });
+  }, [filterCategories.size]);
 
   const handleClearAllFilters = useCallback(() => {
     setFilterCategories(new Set());
@@ -959,6 +978,25 @@ function App() {
   }, [filteredSections]);
 
   const totalItemCount = masterList?.itemCount || 0;
+
+  const itemCountText = useMemo(() => {
+    if (showPendingOnly) {
+      const pendingCount =
+        Object.keys(pendingMoves).length + Object.keys(pendingDeletes).length;
+      return `Showing ${pendingCount} pending ${pendingCount === 1 ? "change" : "changes"} of ${totalItemCount} items`;
+    }
+    if (filterCategories.size > 0) {
+      return `Filtered out ${filteredItemCount} of ${totalItemCount} items`;
+    }
+    return `${totalItemCount} items`;
+  }, [
+    showPendingOnly,
+    pendingMoves,
+    pendingDeletes,
+    filterCategories.size,
+    filteredItemCount,
+    totalItemCount,
+  ]);
 
   const listsView = React.createElement(
     React.Fragment,
@@ -1148,6 +1186,12 @@ function App() {
           { className: "category-sidebar-description" },
           "Click an item on the left, then click a category here to tag it for moving. Use the filter icon to show only that category.",
         ),
+        showPendingOnly &&
+          React.createElement(
+            "p",
+            { className: "category-filters-disabled-notice" },
+            "Filtering by category is disabled while showing pending changes",
+          ),
         filterCategories.size > 0 &&
           React.createElement(
             "button",
@@ -1204,7 +1248,7 @@ function App() {
                   return next;
                 });
               },
-              disabled: isApplying,
+              disabled: isApplying || showPendingOnly,
             },
             React.createElement(FilterIcon, null),
           ),
@@ -1255,9 +1299,7 @@ function App() {
               React.createElement(
                 "div",
                 { className: "master-item-count" },
-                filterCategories.size > 0
-                  ? `Filtered out ${filteredItemCount} of ${totalItemCount} items`
-                  : `${totalItemCount} items`,
+                itemCountText,
               ),
           ),
           !loading &&
@@ -1274,7 +1316,9 @@ function App() {
                   ? "Show all items"
                   : "Show only items selected for move/deletion",
               },
-              showPendingOnly ? "✓ Pending" : "Pending",
+              showPendingOnly
+                ? "✓ Show pending changes"
+                : "Show pending changes",
             ),
         ),
       ),
