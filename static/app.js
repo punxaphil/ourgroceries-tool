@@ -1,4 +1,5 @@
-const { useCallback, useEffect, useMemo, useRef, useState } = React;
+const { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } =
+  React;
 
 const HASH_MASTER = "#/master";
 const HASH_LISTS = "#/lists";
@@ -102,6 +103,25 @@ const PenIcon = () =>
     }),
   );
 
+const FilterIcon = () =>
+  React.createElement(
+    "svg",
+    {
+      width: "16",
+      height: "16",
+      viewBox: "0 0 16 16",
+      fill: "none",
+      xmlns: "http://www.w3.org/2000/svg",
+      "aria-hidden": "true",
+    },
+    React.createElement("path", {
+      d: "M2 4h12M4 8h8M6 12h4",
+      stroke: "currentColor",
+      strokeWidth: "1.5",
+      strokeLinecap: "round",
+    }),
+  );
+
 function App() {
   const [data, setData] = useState({ lists: [], masterList: null });
   const [status, setStatus] = useState("Loading lists…");
@@ -121,18 +141,6 @@ function App() {
       console.error("Failed to load filter state:", error);
     }
     return new Set();
-  });
-  const [isFilterActive, setIsFilterActive] = useState(() => {
-    try {
-      const stored = window.localStorage.getItem(FILTER_STATE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        return parsed.isActive || false;
-      }
-    } catch (error) {
-      console.error("Failed to load filter state:", error);
-    }
-    return false;
   });
   const [showPendingOnly, setShowPendingOnly] = useState(() => {
     try {
@@ -155,6 +163,8 @@ function App() {
   const [isRenaming, setIsRenaming] = useState(false);
   const toastTimeouts = useRef(new Map());
   const hasLoadedPendingRef = useRef(false);
+  const categoryListRef = useRef(null);
+  const categoryPositions = useRef(new Map());
 
   const addToast = useCallback((message) => {
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -233,6 +243,53 @@ function App() {
       name: section.name || "Uncategorized",
     }));
   }, [masterList]);
+
+  const sortedCategoryList = useMemo(() => {
+    const sorted = [...categoryList];
+    sorted.sort((a, b) => {
+      const aFiltered = filterCategories.has(a.id);
+      const bFiltered = filterCategories.has(b.id);
+
+      // Filtered categories come first
+      if (aFiltered && !bFiltered) return -1;
+      if (!aFiltered && bFiltered) return 1;
+
+      // Within the same group, maintain original order
+      return 0;
+    });
+    return sorted;
+  }, [categoryList, filterCategories]);
+
+  // FLIP animation for category reordering
+  useLayoutEffect(() => {
+    if (!categoryListRef.current) return;
+
+    const items = categoryListRef.current.querySelectorAll(
+      ".category-list-item",
+    );
+    const newPositions = new Map();
+
+    items.forEach((item) => {
+      const id = item.getAttribute("data-category-id");
+      const rect = item.getBoundingClientRect();
+      newPositions.set(id, rect.top);
+
+      const oldTop = categoryPositions.current.get(id);
+      if (oldTop !== undefined && oldTop !== rect.top) {
+        const delta = oldTop - rect.top;
+        item.style.transform = `translateY(${delta}px)`;
+        item.style.transition = "none";
+
+        requestAnimationFrame(() => {
+          item.style.transition =
+            "transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)";
+          item.style.transform = "translateY(0)";
+        });
+      }
+    });
+
+    categoryPositions.current = newPositions;
+  }, [sortedCategoryList]);
 
   const categoryNameLookup = useMemo(() => {
     const lookup = new Map();
@@ -398,10 +455,9 @@ function App() {
   useEffect(() => {
     const payload = {
       categories: Array.from(filterCategories),
-      isActive: isFilterActive,
     };
     window.localStorage.setItem(FILTER_STATE_KEY, JSON.stringify(payload));
-  }, [filterCategories, isFilterActive]);
+  }, [filterCategories]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -761,19 +817,13 @@ function App() {
     setApplyModalOpen(false);
   }, [isApplying]);
 
-  const handleToggleFilter = useCallback(() => {
-    setIsFilterActive((prev) => !prev);
-    if (showPendingOnly) {
-      setShowPendingOnly(false);
-    }
-  }, [showPendingOnly]);
-
   const handleTogglePendingFilter = useCallback(() => {
     setShowPendingOnly((prev) => !prev);
-    if (isFilterActive) {
-      setIsFilterActive(false);
-    }
-  }, [isFilterActive]);
+  }, []);
+
+  const handleClearAllFilters = useCallback(() => {
+    setFilterCategories(new Set());
+  }, []);
 
   const handleOpenRename = useCallback((type, id, currentName) => {
     setRenameTarget({ type, id, currentName });
@@ -884,7 +934,7 @@ function App() {
         .filter(Boolean);
     }
 
-    if (!isFilterActive || filterCategories.size === 0) {
+    if (filterCategories.size === 0) {
       return masterSections;
     }
     return masterSections.filter((section) => {
@@ -892,13 +942,23 @@ function App() {
       return filterCategories.has(categoryId);
     });
   }, [
-    isFilterActive,
     filterCategories,
     masterSections,
     showPendingOnly,
     pendingMoves,
     pendingDeletes,
   ]);
+
+  const filteredItemCount = useMemo(() => {
+    if (!filteredSections || filteredSections.length === 0) {
+      return 0;
+    }
+    return filteredSections.reduce((count, section) => {
+      return count + (section.items?.length || 0);
+    }, 0);
+  }, [filteredSections]);
+
+  const totalItemCount = masterList?.itemCount || 0;
 
   const listsView = React.createElement(
     React.Fragment,
@@ -1078,26 +1138,62 @@ function App() {
   const categorySidebar = React.createElement(
     "aside",
     { className: "category-sidebar" },
-    !loading && React.createElement("h3", null, "Move to category"),
+    !loading &&
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement("h3", null, "Select Target Category"),
+        React.createElement(
+          "p",
+          { className: "category-sidebar-description" },
+          "Click an item on the left, then click a category here to tag it for moving. Use the filter icon to show only that category.",
+        ),
+        filterCategories.size > 0 &&
+          React.createElement(
+            "button",
+            {
+              type: "button",
+              className: "clear-filters-btn",
+              onClick: handleClearAllFilters,
+            },
+            "Clear all filters",
+          ),
+      ),
     React.createElement(
       "ul",
-      { className: "category-list" },
-      categoryList.map((category) => {
+      { className: "category-list", ref: categoryListRef },
+      sortedCategoryList.map((category, index) => {
         const color = categoryColorMap[category.id];
         const isSelected = category.id === selectedCategoryId;
         const isFiltered = filterCategories.has(category.id);
         return React.createElement(
           "li",
-          { key: category.id },
+          {
+            key: category.id,
+            className: `category-list-item${isFiltered ? " filtered" : ""}`,
+            "data-category-id": category.id,
+          },
           React.createElement(
             "button",
             {
               type: "button",
-              className: `category-chip${isSelected ? " selected" : ""}${isFiltered ? " filtered" : ""}`,
+              className: `category-chip${isSelected ? " selected" : ""}`,
               style: { backgroundColor: color },
               onClick: () => handleSelectCategory(category.id),
               disabled: isApplying,
-              onDoubleClick: () => {
+            },
+            category.name,
+          ),
+          React.createElement(
+            "button",
+            {
+              type: "button",
+              className: `category-filter-btn${isFiltered ? " active" : ""}`,
+              "aria-label": isFiltered
+                ? "Remove filter"
+                : "Filter by this category",
+              onClick: (event) => {
+                event.stopPropagation();
                 setFilterCategories((prev) => {
                   const next = new Set(prev);
                   if (next.has(category.id)) {
@@ -1108,8 +1204,9 @@ function App() {
                   return next;
                 });
               },
+              disabled: isApplying,
             },
-            category.name,
+            React.createElement(FilterIcon, null),
           ),
         );
       }),
@@ -1147,26 +1244,22 @@ function App() {
           "div",
           { className: "master-title-row" },
           React.createElement(
-            "h1",
-            null,
-            loading
-              ? data.masterList?.name || "Master List"
-              : `${data.masterList?.name || "Master List"} (${data.masterList?.itemCount || 0} items)`,
-          ),
-          !loading &&
+            "div",
+            { className: "master-title-container" },
             React.createElement(
-              "button",
-              {
-                type: "button",
-                className: `filter-btn${isFilterActive ? " active" : ""}`,
-                onClick: handleToggleFilter,
-                disabled: filterCategories.size === 0,
-                title: isFilterActive
-                  ? "Hide filter"
-                  : "Show only double-clicked categories",
-              },
-              isFilterActive ? "✓ Filter" : "Filter",
+              "h1",
+              null,
+              data.masterList?.name || "Master List",
             ),
+            !loading &&
+              React.createElement(
+                "div",
+                { className: "master-item-count" },
+                filterCategories.size > 0
+                  ? `Filtered out ${filteredItemCount} of ${totalItemCount} items`
+                  : `${totalItemCount} items`,
+              ),
+          ),
           !loading &&
             React.createElement(
               "button",
