@@ -235,6 +235,11 @@ class RenameItemRequest(BaseModel):
     newName: str
 
 
+class RenameCategoryRequest(BaseModel):
+    categoryId: str
+    newName: str
+
+
 @app.post("/api/master/move")
 async def api_move_master_item(request: MoveItemsRequest) -> JSONResponse:
     if not request.items:
@@ -297,7 +302,7 @@ async def api_rename_master_item(request: RenameItemRequest) -> JSONResponse:
         # Get the current master list to find the item's category
         payload = await fetch_lists_payload()
         master_list = payload["masterList"]
-        
+
         # Find the item to get its current category
         item_found = None
         for section in master_list["sections"]:
@@ -307,10 +312,10 @@ async def api_rename_master_item(request: RenameItemRequest) -> JSONResponse:
                     break
             if item_found:
                 break
-        
+
         if not item_found:
             raise HTTPException(status_code=404, detail="Item not found")
-        
+
         # Use change_item_on_list to rename (keep same category, change name)
         client = await get_client()
         category_id = item_found.get("categoryId")
@@ -320,7 +325,51 @@ async def api_rename_master_item(request: RenameItemRequest) -> JSONResponse:
             category_id,
             request.newName.strip(),
         )
-        
+
+        # Fetch updated data
+        updated_payload = await fetch_lists_payload()
+    except InvalidLoginException as exc:
+        raise HTTPException(status_code=401, detail="OurGroceries login failed") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return JSONResponse({"masterList": updated_payload["masterList"]})
+
+
+@app.post("/api/master/rename-category")
+async def api_rename_category(request: RenameCategoryRequest) -> JSONResponse:
+    if not request.newName.strip():
+        raise HTTPException(status_code=400, detail="New name cannot be empty")
+
+    try:
+        client = await get_client()
+
+        # Get category list to find the category
+        category_payload = await client.get_category_items()
+        categories, _ = build_category_index(category_payload)
+
+        # Find the category to verify it exists
+        category_found = None
+        for category in categories:
+            if category["id"] == request.categoryId:
+                category_found = category
+                break
+
+        if not category_found:
+            raise HTTPException(status_code=404, detail="Category not found")
+
+        # Categories are stored in a special list, use change_item_on_list to rename
+        # The category list ID is stored in client._category_id
+        category_list_id = client._category_id
+        await client.change_item_on_list(
+            category_list_id,
+            request.categoryId,
+            None,  # Categories don't have a parent category
+            request.newName.strip(),
+        )
+
         # Fetch updated data
         updated_payload = await fetch_lists_payload()
     except InvalidLoginException as exc:
