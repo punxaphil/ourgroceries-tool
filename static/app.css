@@ -221,6 +221,17 @@ section {
     line-height: 1.4;
 }
 
+.category-filters-disabled-notice {
+    margin: 0 0 0.75rem 0;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    color: #dc2626;
+    background: rgba(220, 38, 38, 0.1);
+    border: 1px solid rgba(220, 38, 38, 0.2);
+    border-radius: 6px;
+    line-height: 1.4;
+}
+
 .clear-filters-btn {
     margin: 0.5rem 0 0 0;
     padding: 0.4rem 0.75rem;
@@ -332,8 +343,9 @@ section {
 }
 
 .category-filter-btn:disabled {
-    opacity: 0.5;
-    cursor: default;
+    opacity: 0.3;
+    cursor: not-allowed;
+    filter: grayscale(0.5);
 }
 
 .category-filter-btn svg {
