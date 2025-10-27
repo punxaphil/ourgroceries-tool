@@ -230,6 +230,11 @@ class DeleteItemsRequest(BaseModel):
     item_ids: List[str]
 
 
+class RenameItemRequest(BaseModel):
+    itemId: str
+    newName: str
+
+
 @app.post("/api/master/move")
 async def api_move_master_item(request: MoveItemsRequest) -> JSONResponse:
     if not request.items:
@@ -281,6 +286,51 @@ async def api_delete_master_items(request: DeleteItemsRequest) -> JSONResponse:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return JSONResponse({"masterList": payload["masterList"]})
+
+
+@app.post("/api/master/rename-item")
+async def api_rename_master_item(request: RenameItemRequest) -> JSONResponse:
+    if not request.newName.strip():
+        raise HTTPException(status_code=400, detail="New name cannot be empty")
+
+    try:
+        # Get the current master list to find the item's category
+        payload = await fetch_lists_payload()
+        master_list = payload["masterList"]
+        
+        # Find the item to get its current category
+        item_found = None
+        for section in master_list["sections"]:
+            for item in section["items"]:
+                if item["id"] == request.itemId:
+                    item_found = item
+                    break
+            if item_found:
+                break
+        
+        if not item_found:
+            raise HTTPException(status_code=404, detail="Item not found")
+        
+        # Use change_item_on_list to rename (keep same category, change name)
+        client = await get_client()
+        category_id = item_found.get("categoryId")
+        await client.change_item_on_list(
+            master_list["id"],
+            request.itemId,
+            category_id,
+            request.newName.strip(),
+        )
+        
+        # Fetch updated data
+        updated_payload = await fetch_lists_payload()
+    except InvalidLoginException as exc:
+        raise HTTPException(status_code=401, detail="OurGroceries login failed") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return JSONResponse({"masterList": updated_payload["masterList"]})
 
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
