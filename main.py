@@ -240,6 +240,14 @@ class RenameCategoryRequest(BaseModel):
     newName: str
 
 
+class CreateCategoryRequest(BaseModel):
+    name: str
+
+
+class DeleteCategoryRequest(BaseModel):
+    categoryId: str
+
+
 @app.post("/api/master/move")
 async def api_move_master_item(request: MoveItemsRequest) -> JSONResponse:
     if not request.items:
@@ -369,6 +377,63 @@ async def api_rename_category(request: RenameCategoryRequest) -> JSONResponse:
             None,  # Categories don't have a parent category
             request.newName.strip(),
         )
+
+        # Fetch updated data
+        updated_payload = await fetch_lists_payload()
+    except InvalidLoginException as exc:
+        raise HTTPException(status_code=401, detail="OurGroceries login failed") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return JSONResponse({"masterList": updated_payload["masterList"]})
+
+
+@app.post("/api/master/create-category")
+async def api_create_category(request: CreateCategoryRequest) -> JSONResponse:
+    if not request.name.strip():
+        raise HTTPException(status_code=400, detail="Category name cannot be empty")
+
+    try:
+        client = await get_client()
+
+        # Create the category using the OurGroceries API
+        await client.create_category(request.name.strip())
+
+        # Fetch updated data
+        updated_payload = await fetch_lists_payload()
+    except InvalidLoginException as exc:
+        raise HTTPException(status_code=401, detail="OurGroceries login failed") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return JSONResponse({"masterList": updated_payload["masterList"]})
+
+
+@app.post("/api/master/delete-category")
+async def api_delete_category(request: DeleteCategoryRequest) -> JSONResponse:
+    try:
+        client = await get_client()
+
+        # Get category list to verify the category exists
+        category_payload = await client.get_category_items()
+        categories, _ = build_category_index(category_payload)
+
+        # Find the category to verify it exists
+        category_found = None
+        for category in categories:
+            if category["id"] == request.categoryId:
+                category_found = category
+                break
+
+        if not category_found:
+            raise HTTPException(status_code=404, detail="Category not found")
+
+        # Categories are stored in a special list, use remove_item_from_list to delete
+        # The category list ID is stored in client._category_id
+        category_list_id = client._category_id
+        await client.remove_item_from_list(category_list_id, request.categoryId)
 
         # Fetch updated data
         updated_payload = await fetch_lists_payload()
