@@ -1,6 +1,6 @@
 * {
     box-sizing: border-box;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 body {
@@ -46,7 +46,9 @@ button {
     border-radius: 999px;
     border: none;
     padding: 0.75rem 1.5rem;
-    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    transition:
+        transform 0.1s ease,
+        box-shadow 0.1s ease;
     margin-top: 1.25rem;
 }
 
@@ -157,7 +159,6 @@ section {
     cursor: not-allowed;
 }
 
-
 .master-section {
     display: flex;
     flex-direction: column;
@@ -179,7 +180,6 @@ section {
     flex-direction: column;
     gap: 1.5rem;
 }
-
 
 .category-sidebar {
     width: 260px;
@@ -222,7 +222,10 @@ section {
     margin: 0;
     text-align: left;
     box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
-    transition: transform 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease;
+    transition:
+        transform 0.1s ease,
+        box-shadow 0.1s ease,
+        border-color 0.1s ease;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -252,7 +255,6 @@ section {
     box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
 }
 
-
 .category-block {
     border: 1px solid #e5e7eb;
     border-radius: 12px;
@@ -264,6 +266,49 @@ section {
     margin: 0 0 0.75rem;
     font-size: 1.1rem;
     color: #1f2937;
+}
+
+.category-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.category-rename-btn {
+    margin: 0;
+    padding: 0;
+    border-radius: 6px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(99, 102, 241, 0.1);
+    color: #4f46e5;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.category-rename-btn:hover:not(:disabled) {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: rgba(99, 102, 241, 0.3);
+    transform: translateY(-1px);
+}
+
+.category-rename-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.category-rename-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.category-rename-btn svg {
+    width: 14px;
+    height: 14px;
 }
 
 .category-block ul {
@@ -280,7 +325,10 @@ section {
     border-radius: 12px;
     background: #fff;
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
-    transition: transform 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease;
+    transition:
+        transform 0.1s ease,
+        box-shadow 0.1s ease,
+        border-color 0.1s ease;
 }
 
 .category-item:hover {
@@ -632,7 +680,9 @@ section {
     border: 2px solid #d1d5db;
     border-radius: 8px;
     font-size: 1rem;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    transition:
+        border-color 0.15s ease,
+        box-shadow 0.15s ease;
 }
 
 .rename-input:focus {
