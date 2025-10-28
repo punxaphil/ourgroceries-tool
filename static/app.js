@@ -122,6 +122,55 @@ const FilterIcon = () =>
     }),
   );
 
+const DragHandleIcon = () =>
+  React.createElement(
+    "svg",
+    {
+      width: "16",
+      height: "16",
+      viewBox: "0 0 16 16",
+      fill: "none",
+      xmlns: "http://www.w3.org/2000/svg",
+      "aria-hidden": "true",
+    },
+    React.createElement("circle", {
+      cx: "5",
+      cy: "4",
+      r: "1",
+      fill: "currentColor",
+    }),
+    React.createElement("circle", {
+      cx: "5",
+      cy: "8",
+      r: "1",
+      fill: "currentColor",
+    }),
+    React.createElement("circle", {
+      cx: "5",
+      cy: "12",
+      r: "1",
+      fill: "currentColor",
+    }),
+    React.createElement("circle", {
+      cx: "11",
+      cy: "4",
+      r: "1",
+      fill: "currentColor",
+    }),
+    React.createElement("circle", {
+      cx: "11",
+      cy: "8",
+      r: "1",
+      fill: "currentColor",
+    }),
+    React.createElement("circle", {
+      cx: "11",
+      cy: "12",
+      r: "1",
+      fill: "currentColor",
+    }),
+  );
+
 function App() {
   const [data, setData] = useState({ lists: [], masterList: null });
   const [status, setStatus] = useState("Loading lists…");
@@ -168,6 +217,8 @@ function App() {
   const hasLoadedPendingRef = useRef(false);
   const categoryListRef = useRef(null);
   const categoryPositions = useRef(new Map());
+  const [draggedCategoryId, setDraggedCategoryId] = useState(null);
+  const [dragOverCategoryId, setDragOverCategoryId] = useState(null);
 
   const addToast = useCallback((message) => {
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -852,6 +903,159 @@ function App() {
     });
   }, [filterCategories.size]);
 
+  const handleCategoryDragStart = useCallback((event, categoryId) => {
+    setDraggedCategoryId(categoryId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", categoryId);
+  }, []);
+
+  const handleCategoryDragEnd = useCallback(() => {
+    setDraggedCategoryId(null);
+    setDragOverCategoryId(null);
+  }, []);
+
+  const handleCategoryDragOver = useCallback((event, categoryId) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverCategoryId((current) => {
+      // Only update if actually changed to prevent unnecessary re-renders
+      return current === categoryId ? current : categoryId;
+    });
+  }, []);
+
+  const handleCategoryDrop = useCallback(
+    async (event, targetCategoryId) => {
+      event.preventDefault();
+      const sourceCategoryId = draggedCategoryId;
+
+      if (!sourceCategoryId || sourceCategoryId === targetCategoryId) {
+        setDraggedCategoryId(null);
+        setDragOverCategoryId(null);
+        return;
+      }
+
+      // Don't reorder uncategorized
+      if (
+        sourceCategoryId === "uncategorized" ||
+        targetCategoryId === "uncategorized"
+      ) {
+        setDraggedCategoryId(null);
+        setDragOverCategoryId(null);
+        addToast("Cannot reorder 'Uncategorized' category");
+        return;
+      }
+
+      // Find the indices of the source and target categories
+      const sourceIndex = sortedCategoryList.findIndex(
+        (cat) => cat.id === sourceCategoryId,
+      );
+      const targetIndex = sortedCategoryList.findIndex(
+        (cat) => cat.id === targetCategoryId,
+      );
+
+      if (sourceIndex === -1 || targetIndex === -1) {
+        setDraggedCategoryId(null);
+        setDragOverCategoryId(null);
+        return;
+      }
+
+      // Determine nextItemId based on drop position
+      // If dragging down, nextItemId is the item AFTER the target
+      // If dragging up, nextItemId is the target itself
+      let nextItemId = null;
+      if (sourceIndex < targetIndex) {
+        // Dragging down - insert after target
+        if (targetIndex + 1 < sortedCategoryList.length) {
+          nextItemId = sortedCategoryList[targetIndex + 1].id;
+          if (nextItemId === "uncategorized") {
+            nextItemId = null; // Move to end if next is uncategorized
+          }
+        }
+      } else {
+        // Dragging up - insert before target
+        nextItemId = targetCategoryId;
+      }
+
+      // OPTIMISTIC UPDATE: Immediately reorder in the UI
+      setData((prev) => {
+        const updatedSections = [...prev.masterList.sections];
+        const sourceSection = updatedSections.find(
+          (s) => s.id === sourceCategoryId,
+        );
+        const targetSection = updatedSections.find(
+          (s) => s.id === targetCategoryId,
+        );
+
+        if (sourceSection && targetSection) {
+          // Remove source from current position
+          const sourceIdx = updatedSections.indexOf(sourceSection);
+          updatedSections.splice(sourceIdx, 1);
+
+          // Find new target position after removal
+          const newTargetIdx = updatedSections.indexOf(targetSection);
+
+          // Insert based on drag direction
+          if (sourceIndex < targetIndex) {
+            // Dragging down - insert after target
+            updatedSections.splice(newTargetIdx + 1, 0, sourceSection);
+          } else {
+            // Dragging up - insert before target
+            updatedSections.splice(newTargetIdx, 0, sourceSection);
+          }
+
+          // Update sortOrder to match new positions
+          updatedSections.forEach((section, idx) => {
+            section.sortOrder = String(idx).padStart(4, "0");
+          });
+        }
+
+        return {
+          ...prev,
+          masterList: {
+            ...prev.masterList,
+            sections: updatedSections,
+          },
+        };
+      });
+
+      setDraggedCategoryId(null);
+      setDragOverCategoryId(null);
+
+      // Send the reorder request to the backend in the background
+      try {
+        const response = await fetch("/api/master/reorder-categories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            itemId: sourceCategoryId,
+            nextItemId: nextItemId,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || "Failed to reorder categories");
+        }
+
+        const result = await response.json();
+        // Update with server response to ensure consistency
+        setData((prev) => ({
+          ...prev,
+          masterList: result.masterList,
+        }));
+
+        addToast("Categories reordered");
+      } catch (error) {
+        console.error("Error reordering categories:", error);
+        addToast(`Error: ${error.message}`);
+        // Refresh to get the correct state on error
+        fetchLists();
+      }
+    },
+    [draggedCategoryId, sortedCategoryList, addToast, fetchLists],
+  );
+
   const handleClearAllFilters = useCallback(() => {
     setFilterCategories(new Set());
   }, []);
@@ -1341,13 +1545,50 @@ function App() {
         const color = categoryColorMap[category.id];
         const isSelected = category.id === selectedCategoryId;
         const isFiltered = filterCategories.has(category.id);
+        const isDragging = draggedCategoryId === category.id;
+        const isDragOver = dragOverCategoryId === category.id;
+
+        // Calculate if this item should show a gap for drop target
+        let showGapBefore = false;
+        let showGapAfter = false;
+        if (isDragOver && draggedCategoryId && !isDragging) {
+          const draggedIndex = sortedCategoryList.findIndex(
+            (cat) => cat.id === draggedCategoryId,
+          );
+          const hoverIndex = index;
+
+          if (draggedIndex < hoverIndex) {
+            // Dragging down - show gap after hover target
+            showGapAfter = true;
+          } else if (draggedIndex > hoverIndex) {
+            // Dragging up - show gap before hover target
+            showGapBefore = true;
+          }
+        }
+
         return React.createElement(
           "li",
           {
             key: category.id,
-            className: `category-list-item${isFiltered ? " filtered" : ""}`,
+            className: `category-list-item${isFiltered ? " filtered" : ""}${isDragging ? " dragging" : ""}${isDragOver ? " drag-over" : ""}${showGapBefore ? " gap-before" : ""}${showGapAfter ? " gap-after" : ""}`,
             "data-category-id": category.id,
+            draggable: !isApplying,
+            onDragStart: (event) => handleCategoryDragStart(event, category.id),
+            onDragEnd: handleCategoryDragEnd,
+            onDragOver: (event) => handleCategoryDragOver(event, category.id),
+            onDrop: (event) => handleCategoryDrop(event, category.id),
           },
+          React.createElement(
+            "button",
+            {
+              type: "button",
+              className: "drag-handle",
+              "aria-label": "Drag to reorder",
+              disabled: isApplying,
+              tabIndex: -1,
+            },
+            React.createElement(DragHandleIcon, null),
+          ),
           React.createElement(
             "button",
             {
