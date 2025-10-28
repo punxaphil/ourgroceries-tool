@@ -248,6 +248,11 @@ class DeleteCategoryRequest(BaseModel):
     categoryId: str
 
 
+class ReorderCategoriesRequest(BaseModel):
+    itemId: str
+    nextItemId: Optional[str] = None
+
+
 @app.post("/api/master/move")
 async def api_move_master_item(request: MoveItemsRequest) -> JSONResponse:
     if not request.items:
@@ -434,6 +439,37 @@ async def api_delete_category(request: DeleteCategoryRequest) -> JSONResponse:
         # The category list ID is stored in client._category_id
         category_list_id = client._category_id
         await client.remove_item_from_list(category_list_id, request.categoryId)
+
+        # Fetch updated data
+        updated_payload = await fetch_lists_payload()
+    except InvalidLoginException as exc:
+        raise HTTPException(status_code=401, detail="OurGroceries login failed") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return JSONResponse({"masterList": updated_payload["masterList"]})
+
+
+@app.post("/api/master/reorder-categories")
+async def api_reorder_categories(request: ReorderCategoriesRequest) -> JSONResponse:
+    try:
+        client = await get_client()
+
+        # Get the category list ID
+        category_list_id = client._category_id
+
+        # Use the reorderItem command to reorder the category
+        # nextItemId can be None to move to the end
+        payload = {
+            "listId": category_list_id,
+            "itemId": request.itemId,
+            "nextItemId": request.nextItemId,
+            "categoryId": None,  # Categories don't have a parent category
+        }
+
+        await client._post("reorderItem", payload)
 
         # Fetch updated data
         updated_payload = await fetch_lists_payload()
