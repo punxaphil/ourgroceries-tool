@@ -48,6 +48,26 @@ const buildItemLookup = (masterList) => {
   return lookup;
 };
 
+const HomeIcon = () =>
+  React.createElement(
+    "svg",
+    {
+      width: "20",
+      height: "20",
+      viewBox: "0 0 20 20",
+      fill: "none",
+      xmlns: "http://www.w3.org/2000/svg",
+      "aria-hidden": "true",
+    },
+    React.createElement("path", {
+      d: "M3 10L10 3L17 10M4 9V17H8V13H12V17H16V9",
+      stroke: "currentColor",
+      strokeWidth: "1.5",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+    }),
+  );
+
 const TrashIcon = () =>
   React.createElement(
     "svg",
@@ -1348,7 +1368,7 @@ function App() {
             window.location.hash = HASH_MASTER;
           },
         },
-        `View ${data.masterList.name || "Master List"} (${data.masterList.itemCount} items)`,
+        `Manage ${data.masterList.name || "Master List"} (${data.masterList.itemCount} items)`,
       ),
   );
 
@@ -1629,84 +1649,91 @@ function App() {
     ),
   );
 
-  const masterBody = React.createElement(
-    "div",
-    { className: "master-layout" },
-    React.createElement("div", { className: "master-content" }, masterContent),
-    categorySidebar,
-  );
-
   const masterView = React.createElement(
     React.Fragment,
     null,
     React.createElement(
-      "button",
-      {
-        className: "secondary-btn",
-        type: "button",
-        onClick: () => {
-          window.location.hash = HASH_LISTS;
-        },
-      },
-      "← Back to Shopping Lists",
-    ),
-    React.createElement(
       "section",
       { className: "master-section" },
       React.createElement(
-        "header",
-        { className: "master-header" },
+        "div",
+        { className: "master-main" },
         React.createElement(
-          "div",
-          { className: "master-title-row" },
+          "header",
+          { className: "master-header" },
           React.createElement(
             "div",
-            { className: "master-title-container" },
+            { className: "master-title-row" },
             React.createElement(
-              "h1",
-              null,
-              data.masterList?.name || "Master List",
+              "button",
+              {
+                type: "button",
+                className: "icon-btn home-btn",
+                onClick: () => {
+                  window.location.hash = HASH_LISTS;
+                },
+                "aria-label": "Back to Shopping Lists",
+                title: "Back to Shopping Lists",
+              },
+              React.createElement(HomeIcon, null),
+            ),
+            React.createElement(
+              "div",
+              { className: "master-title-container" },
+              React.createElement(
+                "h1",
+                null,
+                data.masterList?.name || "Master List",
+              ),
+              !loading &&
+                React.createElement(
+                  "div",
+                  { className: "master-item-count" },
+                  itemCountText,
+                ),
             ),
             !loading &&
               React.createElement(
                 "div",
-                { className: "master-item-count" },
-                itemCountText,
+                { className: "master-actions" },
+                React.createElement(
+                  "button",
+                  {
+                    type: "button",
+                    className: `filter-btn${showPendingOnly ? " active" : ""}`,
+                    onClick: handleTogglePendingFilter,
+                    disabled:
+                      Object.keys(pendingMoves).length === 0 &&
+                      Object.keys(pendingDeletes).length === 0,
+                    title: showPendingOnly
+                      ? "Show all items"
+                      : "Show only items selected for move/deletion",
+                  },
+                  showPendingOnly
+                    ? "✓ Show pending changes"
+                    : "Show pending changes",
+                ),
+                React.createElement(
+                  "button",
+                  {
+                    type: "button",
+                    className: "filter-btn",
+                    onClick: handleOpenCreateCategory,
+                    disabled: isApplying,
+                    title: "Add a new category",
+                  },
+                  "Add Category",
+                ),
               ),
           ),
-          !loading &&
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: `filter-btn${showPendingOnly ? " active" : ""}`,
-                onClick: handleTogglePendingFilter,
-                disabled:
-                  Object.keys(pendingMoves).length === 0 &&
-                  Object.keys(pendingDeletes).length === 0,
-                title: showPendingOnly
-                  ? "Show all items"
-                  : "Show only items selected for move/deletion",
-              },
-              showPendingOnly
-                ? "✓ Show pending changes"
-                : "Show pending changes",
-            ),
-          !loading &&
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: "filter-btn",
-                onClick: handleOpenCreateCategory,
-                disabled: isApplying,
-                title: "Add a new category",
-              },
-              "Add Category",
-            ),
+        ),
+        React.createElement(
+          "div",
+          { className: "master-content" },
+          masterContent,
         ),
       ),
-      masterBody,
+      categorySidebar,
     ),
   );
 
