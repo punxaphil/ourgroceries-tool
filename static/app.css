@@ -126,7 +126,7 @@ section {
 .master-header {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 1rem;
     flex-shrink: 0;
 }
 
@@ -134,23 +134,47 @@ section {
     display: flex;
     align-items: center;
     gap: 1rem;
-    justify-content: space-between;
+}
+
+.home-btn {
+    flex-shrink: 0;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: -0.25rem;
+    margin-top: 0;
+}
+
+.home-btn svg {
+    width: 20px;
+    height: 20px;
 }
 
 .master-title-container {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+    flex: 1;
+    min-width: 0;
 }
 
 .master-title-row h1 {
     margin: 0;
+    font-size: 1.5rem;
 }
 
 .master-item-count {
     font-size: 0.875rem;
     color: #6b7280;
     font-weight: normal;
+}
+
+.master-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    margin-left: auto;
 }
 
 .filter-btn {
@@ -184,22 +208,19 @@ section {
 }
 
 .master-section {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    gap: 0.5rem;
     margin-top: 0;
     flex: 1;
     min-height: 0;
     overflow: hidden;
 }
 
-.master-layout {
-    display: grid !important;
-    grid-template-columns: 1fr 260px !important;
-    grid-template-rows: 1fr !important;
-    align-items: start;
-    gap: 0.5rem;
-    flex: 1;
+.master-main {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
     min-height: 0;
     overflow: hidden;
 }
@@ -210,19 +231,19 @@ section {
     flex-direction: column;
     gap: 1.5rem;
     overflow-y: auto;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     container-type: inline-size;
     container-name: master;
 }
 
 .category-sidebar {
-    width: 260px;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
     overflow: hidden;
     padding-right: 4px;
-    height: 100%;
+    min-height: 0;
 }
 
 .category-sidebar h3 {
@@ -842,7 +863,7 @@ section {
 /* Responsive category items grid */
 .category-items {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
     gap: 8px;
 }
 
