@@ -239,10 +239,44 @@ function App() {
   const categoryPositions = useRef(new Map());
   const [draggedCategoryId, setDraggedCategoryId] = useState(null);
   const [dragOverCategoryId, setDragOverCategoryId] = useState(null);
+  const lastPointerPos = useRef({ x: window.innerWidth / 2, y: 24 });
+
+  useEffect(() => {
+    const moveHandler = (e) => {
+      lastPointerPos.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener("mousemove", moveHandler);
+    return () => window.removeEventListener("mousemove", moveHandler);
+  }, []);
+  const [showCategoryHelp, setShowCategoryHelp] = useState(false);
+
+  // Shortcut system: derive marker from first character of category name.
+  // If multiple categories share the same first character (case-insensitive),
+  // we iterate markers:
+  // 1st: k
+  // 2nd: ⬆k
+  // 3rd: ^k
+  // 4th: ⬆^k
+  // 5th+: ⬆^ plus extra ^ characters (e.g. ⬆^^k, ⬆^^^k)
+  // These are display markers; the keyboard shortcut remains the base letter.
+  // Pressing the letter cycles through all categories beginning with that letter.
+
+  // Map shortcut keys to category IDs based on current sorted order
 
   const addToast = useCallback((message) => {
+    const isCategorySelection = message.startsWith("Selected category:");
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    setToasts((current) => [...current, { id, message }]);
+    const { x, y } = lastPointerPos.current;
+    setToasts((current) => {
+      if (isCategorySelection) {
+        // Replace any existing category selection toast
+        const filtered = current.filter(
+          (t) => !t.message.startsWith("Selected category:"),
+        );
+        return [...filtered, { id, message, x, y }];
+      }
+      return [...current, { id, message, x, y }];
+    });
     const timeoutId = window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
       toastTimeouts.current.delete(id);
@@ -319,20 +353,30 @@ function App() {
   }, [masterList]);
 
   const sortedCategoryList = useMemo(() => {
-    const sorted = [...categoryList];
-    sorted.sort((a, b) => {
-      const aFiltered = filterCategories.has(a.id);
-      const bFiltered = filterCategories.has(b.id);
+    // Group categories into:
+    // 1. Filtered (always on top)
+    // 2. Tagged as move targets (but not filtered)
+    // 3. The rest
+    const filtered = [];
+    const tagged = [];
+    const rest = [];
 
-      // Filtered categories come first
-      if (aFiltered && !bFiltered) return -1;
-      if (!aFiltered && bFiltered) return 1;
+    const taggedSet = new Set(
+      Object.values(pendingMoves).map((m) => m.targetCategoryId),
+    );
 
-      // Within the same group, maintain original order
-      return 0;
+    categoryList.forEach((cat) => {
+      if (filterCategories.has(cat.id)) {
+        filtered.push(cat);
+      } else if (taggedSet.has(cat.id)) {
+        tagged.push(cat);
+      } else {
+        rest.push(cat);
+      }
     });
-    return sorted;
-  }, [categoryList, filterCategories]);
+
+    return [...filtered, ...tagged, ...rest];
+  }, [categoryList, filterCategories, pendingMoves]);
 
   // FLIP animation for category reordering
   useLayoutEffect(() => {
@@ -558,9 +602,107 @@ function App() {
         return;
       }
       setSelectedCategoryId(categoryId);
+      const name = categoryNameLookup.get(categoryId) || "Uncategorized";
+      addToast(`Selected category: ${name}`);
     },
-    [isApplying],
+    [isApplying, categoryNameLookup, addToast],
   );
+
+  // Build display markers and cycling groups based on first letter collisions
+  const { categoryShortcutMarkerMap, shortcutGroups } = useMemo(() => {
+    const markerMap = new Map();
+    const groups = new Map(); // base letter -> ordered array of category ids
+
+    sortedCategoryList.forEach((cat) => {
+      const firstRaw = (cat.name || "").trim().charAt(0) || "";
+      const keyLetter = firstRaw.toLowerCase();
+      if (!groups.has(keyLetter)) {
+        groups.set(keyLetter, []);
+      }
+      groups.get(keyLetter).push(cat.id);
+    });
+
+    // Collision marker rules for cycling (repeated key presses):
+    // idx 0: letter (e.g. k)
+    // idx 1: ⬆k
+    // idx 2: ^k
+    // idx 3: ⬆^k
+    // idx >=4: ⬆^ plus additional ^ characters (e.g. ⬆^^k, ⬆^^^k)
+    // These are purely visual to indicate order; pressing the same letter repeatedly
+    // cycles through all categories sharing that initial letter.
+    groups.forEach((ids, letter) => {
+      ids.forEach((id, idx) => {
+        let display;
+        switch (idx) {
+          case 0:
+            display = letter;
+            break;
+          case 1:
+            display = `⬆${letter}`;
+            break;
+          case 2:
+            display = `^${letter}`;
+            break;
+          case 3:
+            display = `⬆^${letter}`;
+            break;
+          default:
+            display = `⬆^${"^".repeat(idx - 3)}${letter}`;
+        }
+        markerMap.set(id, display);
+      });
+    });
+
+    return {
+      categoryShortcutMarkerMap: markerMap,
+      shortcutGroups: groups,
+    };
+  }, [sortedCategoryList]);
+
+  // Handle keydown: repeated presses of the same letter cycle through collisions
+  const shortcutCycleIndexRef = useRef(new Map());
+  useEffect(() => {
+    // Reset cycle indices when the sorted list changes
+    shortcutCycleIndexRef.current = new Map();
+  }, [sortedCategoryList]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (isApplying) return;
+      const active = document.activeElement;
+      if (active) {
+        const tag = active.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        if (active.isContentEditable) return;
+      }
+
+      const key = e.key.toLowerCase();
+      if (!/^[\p{L}\p{N}]$/u.test(key)) return;
+
+      const group = shortcutGroups.get(key);
+      if (!group || group.length === 0) return;
+
+      // Cycling index stores last selected position (not next forward position)
+      let currentIdx = shortcutCycleIndexRef.current.get(key);
+
+      if (currentIdx === undefined) {
+        // First press initializes selection depending on direction
+        currentIdx = e.shiftKey ? group.length - 1 : 0;
+      } else if (e.shiftKey) {
+        // Reverse cycling when Shift held: move to previous relative to last selected
+        currentIdx = (currentIdx - 1 + group.length) % group.length;
+      } else {
+        // Forward cycling: move to next relative to last selected
+        currentIdx = (currentIdx + 1) % group.length;
+      }
+
+      handleSelectCategory(group[currentIdx]);
+      shortcutCycleIndexRef.current.set(key, currentIdx);
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [shortcutGroups, handleSelectCategory, isApplying]);
 
   const handleToggleMove = useCallback(
     (item) => {
@@ -1528,6 +1670,13 @@ function App() {
     );
   }
 
+  const canReorderCategories =
+    !isApplying &&
+    filterCategories.size === 0 &&
+    Object.keys(pendingMoves).length === 0 &&
+    Object.keys(pendingDeletes).length === 0 &&
+    !showPendingOnly;
+
   const categorySidebar = React.createElement(
     "aside",
     { className: "category-sidebar" },
@@ -1535,12 +1684,32 @@ function App() {
       React.createElement(
         React.Fragment,
         null,
-        React.createElement("h3", null, "Select Target Category"),
         React.createElement(
-          "p",
-          { className: "category-sidebar-description" },
-          "Click an item on the left, then click a category here to tag it for moving. Use the filter icon to show only that category.",
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: "0.5rem" } },
+          React.createElement(
+            "h3",
+            { style: { margin: 0 } },
+            "Select Target Category",
+          ),
+          React.createElement(
+            "button",
+            {
+              type: "button",
+              className: "info-btn",
+              onClick: () => setShowCategoryHelp((v) => !v),
+              "aria-label": showCategoryHelp ? "Hide help" : "Show help",
+              title: showCategoryHelp ? "Hide help text" : "Show help text",
+            },
+            "ⓘ",
+          ),
         ),
+        showCategoryHelp &&
+          React.createElement(
+            "p",
+            { className: "category-sidebar-description" },
+            "Click an item on the left, then click a category to tag it for moving. Use the filter icon to show only that category. Number + letter shortcuts select categories quickly.",
+          ),
         showPendingOnly &&
           React.createElement(
             "p",
@@ -1592,7 +1761,7 @@ function App() {
             key: category.id,
             className: `category-list-item${isFiltered ? " filtered" : ""}${isDragging ? " dragging" : ""}${isDragOver ? " drag-over" : ""}${showGapBefore ? " gap-before" : ""}${showGapAfter ? " gap-after" : ""}`,
             "data-category-id": category.id,
-            draggable: !isApplying,
+            draggable: canReorderCategories,
             onDragStart: (event) => handleCategoryDragStart(event, category.id),
             onDragEnd: handleCategoryDragEnd,
             onDragOver: (event) => handleCategoryDragOver(event, category.id),
@@ -1604,7 +1773,7 @@ function App() {
               type: "button",
               className: "drag-handle",
               "aria-label": "Drag to reorder",
-              disabled: isApplying,
+              disabled: !canReorderCategories,
               tabIndex: -1,
             },
             React.createElement(DragHandleIcon, null),
@@ -1739,15 +1908,22 @@ function App() {
 
   const toastElements =
     toasts.length > 0
-      ? React.createElement(
-          "div",
-          { className: "toast-container" },
-          toasts.map((toast) =>
-            React.createElement(
-              "div",
-              { key: toast.id, className: "toast" },
-              toast.message,
-            ),
+      ? toasts.map((toast) =>
+          React.createElement(
+            "div",
+            {
+              key: toast.id,
+              className: "toast",
+              style: {
+                position: "fixed",
+                left: `${toast.x + 12}px`,
+                top: `${toast.y + 12}px`,
+                zIndex: 200,
+                pointerEvents: "none",
+                transform: "translate(-50%, 0)",
+              },
+            },
+            toast.message,
           ),
         )
       : null;
