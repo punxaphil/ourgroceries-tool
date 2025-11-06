@@ -612,6 +612,7 @@ section {
         transform 0.1s ease,
         box-shadow 0.1s ease,
         border-color 0.1s ease;
+    cursor: pointer; /* Make entire item clickable */
 }
 
 .category-item:hover {
@@ -640,7 +641,7 @@ section {
     background: transparent;
     border: none;
     border-radius: 10px 0 0 10px;
-    cursor: pointer;
+    /* Cursor handled by parent (.category-item); keep this a passive container */
     text-align: left;
     min-width: 0; /* Allow flex child to shrink for long text */
 }
@@ -779,10 +780,10 @@ section {
 }
 
 .apply-summary-counts {
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     color: #6b7280;
-    margin-top: 0.5rem;
-    margin-bottom: 0.5rem;
+    margin: 0;
+    padding: 0.15rem 0;
 }
 
 .apply-progress-list {
@@ -791,7 +792,7 @@ section {
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.35rem;
     overflow-y: auto;
     flex: 1 1 auto;
     min-height: 0;
@@ -799,25 +800,30 @@ section {
 
 .apply-progress-list li {
     border: 1px solid rgba(31, 41, 55, 0.08);
-    border-radius: 12px;
-    padding: 0.85rem 1rem;
+    border-radius: 8px;
+    padding: 0.4rem 0.6rem;
     display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
+    align-items: center;
+    gap: 0.6rem;
     flex-shrink: 0;
+    line-height: 1.2;
 }
 
 .apply-progress-content {
     flex: 1 1 auto;
     display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.6rem;
     min-width: 0;
 }
 
 .apply-progress-text {
-    font-weight: 600;
+    font-weight: 500;
     color: #1f2937;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .apply-status-label {

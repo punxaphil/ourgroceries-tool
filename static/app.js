@@ -597,15 +597,66 @@ function App() {
   }, [showPendingOnly, pendingMoves, pendingDeletes, addToast]);
 
   const handleSelectCategory = useCallback(
-    (categoryId) => {
+    (
+      categoryId,
+      groupInfo = null,
+      keyLetter = "",
+      selectedIndex = 0,
+      groupIds = null,
+      fixedPos = null,
+    ) => {
       if (isApplying) {
         return;
       }
       setSelectedCategoryId(categoryId);
-      const name = categoryNameLookup.get(categoryId) || "Uncategorized";
-      addToast(`Selected category: ${name}`);
+
+      // Build lines in constant original group order.
+      // Selected line: just the name (bold when rendered).
+      // Non-selected lines: just name (grayed in renderer).
+      const lines = [];
+      if (groupInfo && groupInfo.length > 0) {
+        groupInfo.forEach((entry) => {
+          lines.push(entry.name);
+        });
+      } else {
+        const name = categoryNameLookup.get(categoryId) || "Uncategorized";
+        lines.push(name);
+      }
+
+      const id = `${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+
+      // Preserve position if provided (e.g. clicking inside existing toast)
+      const { x, y } = fixedPos ? fixedPos : lastPointerPos.current;
+
+      setToasts((current) => {
+        const filtered = current.filter((t) => t.type !== "category-selection");
+        return [
+          ...filtered,
+          {
+            id,
+            type: "category-selection",
+            lines,
+            selectedIndex,
+            keyLetter,
+            groupIds,
+            x,
+            y,
+            // store flag for hover timeout management
+            hoverCancelable: true,
+          },
+        ];
+      });
+
+      // Restore timeout (will be canceled on mouse enter)
+      const timeoutId = window.setTimeout(() => {
+        setToasts((current) => current.filter((toast) => toast.id !== id));
+        toastTimeouts.current.delete(id);
+      }, 2800);
+      toastTimeouts.current.set(id, timeoutId);
     },
-    [isApplying, categoryNameLookup, addToast],
+    [isApplying, categoryNameLookup],
   );
 
   // Build display markers and cycling groups based on first letter collisions
@@ -696,13 +747,29 @@ function App() {
         currentIdx = (currentIdx + 1) % group.length;
       }
 
-      handleSelectCategory(group[currentIdx]);
+      // Build constant-order group info with presses needed (forward cycling count)
+      const groupInfo = group.map((catId, idx) => {
+        const name = categoryNameLookup.get(catId) || "Uncategorized";
+        const len = group.length;
+        // Presses needed to reach this idx from currentIdx with forward cycling
+        let presses =
+          idx >= currentIdx ? idx - currentIdx : len - (currentIdx - idx);
+        return { name, presses };
+      });
+
+      handleSelectCategory(
+        group[currentIdx],
+        groupInfo,
+        key,
+        currentIdx,
+        group,
+      );
       shortcutCycleIndexRef.current.set(key, currentIdx);
     };
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [shortcutGroups, handleSelectCategory, isApplying]);
+  }, [shortcutGroups, handleSelectCategory, isApplying, categoryNameLookup]);
 
   const handleToggleMove = useCallback(
     (item) => {
@@ -807,6 +874,43 @@ function App() {
           : step,
       ),
     );
+    // Auto-scroll logic:
+    // Keep first pending/running step visible; never scroll past it.
+    // Only scroll downward enough to reveal newly started steps while retaining the first running/pending in view.
+    setTimeout(() => {
+      const listEl = document.querySelector(".apply-progress-list");
+      if (!listEl) return;
+      const items = Array.from(listEl.querySelectorAll("li"));
+      const incomplete = items.filter(
+        (li) =>
+          li.classList.contains("status-pending") ||
+          li.classList.contains("status-running"),
+      );
+      if (incomplete.length === 0) {
+        // All done: scroll to bottom to show final results.
+        listEl.scrollTo({ top: listEl.scrollHeight, behavior: "smooth" });
+        return;
+      }
+      const firstIncomplete = incomplete[0];
+      const lastIncomplete = incomplete[incomplete.length - 1];
+      const firstTop = firstIncomplete.offsetTop;
+      const lastBottom = lastIncomplete.offsetTop + lastIncomplete.offsetHeight;
+      const viewportTop = listEl.scrollTop;
+      const viewportBottom = viewportTop + listEl.clientHeight;
+
+      // If we've scrolled past (below) the first incomplete, pull back up so it remains visible.
+      if (viewportTop > firstTop) {
+        listEl.scrollTo({ top: firstTop, behavior: "smooth" });
+        return;
+      }
+
+      // If the last incomplete extends below the viewport, scroll just enough to bring it into view
+      // without moving past the first incomplete.
+      if (lastBottom > viewportBottom) {
+        const desiredTop = Math.max(firstTop, lastBottom - listEl.clientHeight);
+        listEl.scrollTo({ top: desiredTop, behavior: "smooth" });
+      }
+    }, 0);
   }, []);
 
   const performOperations = useCallback(
@@ -1603,14 +1707,26 @@ function App() {
                 style: pendingMove
                   ? { "--pending-color": moveColor }
                   : undefined,
+                onClick: () => {
+                  if (!isApplying) {
+                    handleToggleMove(item);
+                  }
+                },
+                role: "button",
+                tabIndex: 0,
+                onKeyDown: (e) => {
+                  if (isApplying) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleToggleMove(item);
+                  }
+                },
               },
               React.createElement(
-                "button",
+                "div",
                 {
-                  type: "button",
                   className: "item-main",
-                  onClick: () => handleToggleMove(item),
-                  disabled: isApplying,
+                  "aria-disabled": isApplying ? "true" : "false",
                 },
                 React.createElement(
                   "span",
@@ -1908,24 +2024,88 @@ function App() {
 
   const toastElements =
     toasts.length > 0
-      ? toasts.map((toast) =>
-          React.createElement(
-            "div",
-            {
-              key: toast.id,
-              className: "toast",
-              style: {
-                position: "fixed",
-                left: `${toast.x + 12}px`,
-                top: `${toast.y + 12}px`,
-                zIndex: 200,
-                pointerEvents: "none",
-                transform: "translate(-50%, 0)",
-              },
+      ? toasts.map((toast) => {
+          const baseProps = {
+            key: toast.id,
+            className: "toast",
+            style: {
+              position: "fixed",
+              left: `${toast.x + 12}px`,
+              top: `${toast.y + 12}px`,
+              zIndex: 200,
+              pointerEvents: "auto",
+              transform: "translate(-50%, 0)",
             },
-            toast.message,
-          ),
-        )
+            onMouseEnter: () => {
+              // Cancel timeout while hovering
+              if (toast.type === "category-selection") {
+                const tid = toastTimeouts.current.get(toast.id);
+                if (tid) {
+                  window.clearTimeout(tid);
+                  toastTimeouts.current.delete(toast.id);
+                }
+              }
+            },
+            onMouseLeave: () => {
+              // Dismiss on pointer leave
+              if (toast.type === "category-selection") {
+                setToasts((current) =>
+                  current.filter((t) => t.id !== toast.id),
+                );
+              }
+            },
+          };
+
+          if (
+            toast.type === "category-selection" &&
+            Array.isArray(toast.lines)
+          ) {
+            return React.createElement(
+              "div",
+              baseProps,
+              toast.lines.map((line, idx) =>
+                React.createElement(
+                  "div",
+                  {
+                    key: idx,
+                    style:
+                      idx === toast.selectedIndex
+                        ? { fontWeight: 600, cursor: "pointer" }
+                        : {
+                            color: "#9ca3af",
+                            fontSize: "0.85em",
+                            cursor: "pointer",
+                          },
+                    onClick: () => {
+                      if (
+                        toast.type === "category-selection" &&
+                        toast.groupIds
+                      ) {
+                        const groupInfo = toast.groupIds.map((catId) => ({
+                          name:
+                            categoryNameLookup.get(catId) || "Uncategorized",
+                          presses: 0,
+                        }));
+                        // Preserve existing toast position (do not move on click)
+                        handleSelectCategory(
+                          toast.groupIds[idx],
+                          groupInfo,
+                          toast.keyLetter || "",
+                          idx,
+                          toast.groupIds,
+                          { x: toast.x, y: toast.y },
+                        );
+                      }
+                    },
+                  },
+                  line,
+                ),
+              ),
+            );
+          }
+
+          return React.createElement("div", baseProps, toast.message);
+        })
       : null;
 
   const applyButton =
@@ -1955,6 +2135,8 @@ function App() {
             isApplying ? "Applying changes…" : "Changes summary",
           ),
           !isApplying &&
+            (Object.keys(pendingMoves).length > 0 ||
+              Object.keys(pendingDeletes).length > 0) &&
             React.createElement(
               "div",
               { className: "apply-summary-counts" },
@@ -1974,7 +2156,7 @@ function App() {
                   "div",
                   { className: "apply-progress-content" },
                   React.createElement(
-                    "div",
+                    "span",
                     { className: "apply-progress-text" },
                     step.type === "move"
                       ? `Move "${step.itemName}" to ${step.targetCategoryName}`
@@ -1983,21 +2165,17 @@ function App() {
                   React.createElement(
                     "span",
                     { className: "apply-status-label" },
-                    step.status === "pending"
+                    (step.status === "pending"
                       ? "Pending"
                       : step.status === "running"
                         ? "In progress"
                         : step.status === "success"
                           ? "Done"
-                          : "Failed",
+                          : "Failed") +
+                      (step.status === "error" && step.errorMessage
+                        ? `: ${step.errorMessage}`
+                        : ""),
                   ),
-                  step.status === "error" && step.errorMessage
-                    ? React.createElement(
-                        "p",
-                        { className: "apply-error" },
-                        step.errorMessage,
-                      )
-                    : null,
                 ),
                 !isApplying &&
                   step.status === "pending" &&
