@@ -1,11 +1,13 @@
-- [x] Clarify Project Requirements — Python app using `ourgroceries` to print list names.
-- [x] Scaffold the Project — Initialized uv project and added starter files.
-- [x] Customize the Project — Built FastAPI backend plus React static client for list display.
-- [x] Install Required Extensions — No extensions needed.
-- [x] Compile the Project — `uv run python -m compileall main.py`.
-- [x] Create and Run Task — No VS Code tasks required.
-- [x] Launch the Project — Verified `uv run python -m uvicorn main:app --reload` serves API + React UI.
-
-# Guidelines
+* Methods should never be longer than 10 lines.
+* Files should never be longer than 100 lines.
+* Avoid duplicate code.
+* Use early returns to reduce nesting.
+* Use descriptive variable and function names.
+* Prefer composition to inheritance.
+* Write pure functions whenever possible.
+* Avoid side effects in functions.
+* Use constants for fixed values instead of magic numbers or strings.
+* Never use `eslint-disable` or `/* eslint-disable */` comments to silence linter errors; instead fix the underlying issue
+* Avoid redundant variables: don't create temporary variables that simply rename another value unless it improves readability or documents intent. Prefer direct returns, destructuring, and small helper functions. If a variable adds clarity, name it descriptively and keep its scope minimal.
+* no unused variables, functions, imports, or exports
 * No README or documentation needed.
-* After changes, always start the server with `uv run python -m uvicorn main:app --reload`.
