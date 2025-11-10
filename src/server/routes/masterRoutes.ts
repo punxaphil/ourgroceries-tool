@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import type { FormattedMasterList } from '../types.js';
 import {
   parseMoveMasterItemsInput,
   parseDeleteMasterItemsInput,
@@ -19,67 +20,32 @@ import {
   reorderMasterCategories,
 } from '../services/masterList/operations.js';
 
-const router = Router();
+const masterRouter = Router();
 
-function respondWithMasterList(res: Response, masterList: unknown): void {
+function respondWithMasterList(res: Response, masterList: FormattedMasterList): void {
   res.json({ masterList });
 }
 
-router.post(
-  '/move',
-  asyncHandler(async (req, res) => {
-    const masterList = await moveMasterItems(parseMoveMasterItemsInput(req.body));
-    respondWithMasterList(res, masterList);
-  })
-);
+function registerMasterRoute<Input>(
+  path: string,
+  parse: (body: unknown) => Input,
+  operate: (input: Input) => Promise<FormattedMasterList>
+): void {
+  masterRouter.post(
+    path,
+    asyncHandler(async (req, res) => {
+      const masterList = await operate(parse(req.body));
+      respondWithMasterList(res, masterList);
+    })
+  );
+}
 
-router.post(
-  '/delete',
-  asyncHandler(async (req, res) => {
-    const masterList = await deleteMasterItems(parseDeleteMasterItemsInput(req.body));
-    respondWithMasterList(res, masterList);
-  })
-);
+registerMasterRoute('/move', parseMoveMasterItemsInput, moveMasterItems);
+registerMasterRoute('/delete', parseDeleteMasterItemsInput, deleteMasterItems);
+registerMasterRoute('/rename-item', parseRenameMasterItemInput, renameMasterItem);
+registerMasterRoute('/rename-category', parseRenameMasterCategoryInput, renameMasterCategory);
+registerMasterRoute('/create-category', parseCreateMasterCategoryInput, createMasterCategory);
+registerMasterRoute('/delete-category', parseDeleteMasterCategoryInput, deleteMasterCategory);
+registerMasterRoute('/reorder-categories', parseReorderMasterCategoriesInput, reorderMasterCategories);
 
-router.post(
-  '/rename-item',
-  asyncHandler(async (req, res) => {
-    const masterList = await renameMasterItem(parseRenameMasterItemInput(req.body));
-    respondWithMasterList(res, masterList);
-  })
-);
-
-router.post(
-  '/rename-category',
-  asyncHandler(async (req, res) => {
-    const masterList = await renameMasterCategory(parseRenameMasterCategoryInput(req.body));
-    respondWithMasterList(res, masterList);
-  })
-);
-
-router.post(
-  '/create-category',
-  asyncHandler(async (req, res) => {
-    const masterList = await createMasterCategory(parseCreateMasterCategoryInput(req.body));
-    respondWithMasterList(res, masterList);
-  })
-);
-
-router.post(
-  '/delete-category',
-  asyncHandler(async (req, res) => {
-    const masterList = await deleteMasterCategory(parseDeleteMasterCategoryInput(req.body));
-    respondWithMasterList(res, masterList);
-  })
-);
-
-router.post(
-  '/reorder-categories',
-  asyncHandler(async (req, res) => {
-    const masterList = await reorderMasterCategories(parseReorderMasterCategoriesInput(req.body));
-    respondWithMasterList(res, masterList);
-  })
-);
-
-export const masterRoutes = router;
-export default router;
+export default masterRouter;

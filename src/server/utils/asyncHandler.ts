@@ -11,7 +11,7 @@ interface AsyncHandlerOptions {
 }
 
 function resolveError(error: unknown, mapper?: ErrorMapper): HttpError {
-  const mapped = mapper ? mapper(error) : ensureHttpError(error, 'Request failed.');
+  const mapped = mapper?.(error) ?? error;
   return ensureHttpError(mapped, 'Request failed.');
 }
 
@@ -21,7 +21,7 @@ export function asyncHandler(handler: AsyncRequestHandler, options?: AsyncHandle
       await handler(req, res, next);
     } catch (error) {
       const httpError = resolveError(error, options?.mapError);
-      if (options?.onError) options.onError(httpError, req);
+      options?.onError?.(httpError, req);
       next(httpError);
     }
   };

@@ -43,15 +43,3 @@ export function ensureArray<T>(value: unknown, context: string, predicate?: Pred
   if (invalid === undefined) return value as T[];
   throw validationError(`${context} contains invalid entries.`);
 }
-
-export function ensureHasKeys(record: Record<string, unknown>, keys: readonly string[], context: string): void {
-  const missing = keys.filter((key) => !(key in record));
-  if (missing.length === 0) return;
-  throw validationError(`${context} is missing: ${missing.join(', ')}`);
-}
-
-export function ensureStringInSet(value: unknown, context: string, allowed: readonly string[]): string {
-  const normalized = ensureString(value, context);
-  if (allowed.includes(normalized)) return normalized;
-  throw validationError(`${context} must be one of: ${allowed.join(', ')}`);
-}

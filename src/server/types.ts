@@ -79,11 +79,3 @@ export interface ReorderMasterCategoriesInput {
 export interface ErrorBody {
   detail: string;
 }
-
-export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-
-export type ApiResult<TSuccess> =
-  | { ok: true; status: number; body: TSuccess }
-  | { ok: false; status: number; body: ErrorBody };
-
-export type AsyncApiHandler<TSuccess> = () => Promise<ApiResult<TSuccess>>;

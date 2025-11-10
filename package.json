@@ -6,8 +6,11 @@
   "main": "dist/index.js",
   "scripts": {
     "start": "node dist/index.js",
-    "build": "npm run lint && npm run format && tsc",
-    "dev": "tsx watch src/index.ts",
+    "build": "npm run lint && npm run format && npm run build:frontend && tsc",
+    "build:frontend": "npm --prefix frontend run build",
+    "dev": "npm-run-all --parallel dev:backend dev:frontend",
+    "dev:backend": "tsx watch src/index.ts",
+    "dev:frontend": "npm --prefix frontend run dev",
     "lint": "eslint src",
     "format": "prettier --check ."
   },
@@ -15,9 +18,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@types/connect-livereload": "^0.6.3",
     "@types/express": "^4.17.21",
-    "@types/livereload": "^0.9.2",
     "@types/node": "^20.11.24",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
@@ -25,6 +26,7 @@
     "eslint-plugin-no-relative-import-paths": "^1.6.1",
     "eslint-plugin-prettier": "^5.5.4",
     "eslint-plugin-promise": "^7.2.1",
+    "npm-run-all": "^4.1.5",
     "prettier": "^3.6.2",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.6",
@@ -32,10 +34,8 @@
     "typescript-eslint": "^8.46.3"
   },
   "dependencies": {
-    "connect-livereload": "^0.6.1",
     "dotenv": "^16.4.5",
     "express": "^4.18.3",
-    "livereload": "^0.9.3",
     "ourgroceries": "file:../ourgroceries-nodejs"
   }
 }
