@@ -1,4 +1,5 @@
 const DEFAULT_ERROR_MESSAGE = 'Request failed';
+export const UNAUTHORIZED_ERROR = 'Session expired. Please log in again.';
 
 const extractDetail = (payload: unknown): string | null => {
   if (!payload || typeof payload !== 'object') return null;
@@ -24,4 +25,10 @@ export const readApiError = async (response: Response): Promise<string> => {
   if (detail) return detail;
   if (text.trim()) return text;
   return fallback;
+};
+
+export const handleUnauthorized = (response: Response, onUnauthorized: () => void): boolean => {
+  if (response.status !== 401) return false;
+  onUnauthorized();
+  return true;
 };

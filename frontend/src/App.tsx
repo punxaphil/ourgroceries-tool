@@ -2,6 +2,7 @@ import React, { useCallback, useRef } from 'react';
 import ListsView from './components/ListsView';
 import MasterViewContainer from './components/MasterViewContainer';
 import AppLayers from './components/AppLayers';
+import LoginView from './components/LoginView';
 import { useCategoryReordering } from './hooks/useCategoryReordering';
 import { useApplyOperations } from './hooks/useApplyOperations';
 import { useCategorySelection } from './hooks/useCategorySelection';
@@ -9,6 +10,7 @@ import { useRenameModal } from './hooks/useRenameModal';
 import { useToastSystem } from './hooks/useToastSystem';
 import { useViewNavigation } from './hooks/useViewNavigation';
 import { useMasterData } from './hooks/useMasterData';
+import { useAuth } from './hooks/useAuth';
 import { useCategoryListAnimation } from './hooks/useCategoryListAnimation';
 import { useMasterFilters } from './hooks/useMasterFilters';
 import { useCreateCategoryModal } from './hooks/useCreateCategoryModal';
@@ -35,7 +37,11 @@ type CategorySelectionPresentation = Required<
 };
 
 const App = () => {
-  const masterData = useMasterData();
+  const auth = useAuth();
+  const masterData = useMasterData({
+    enabled: auth.authenticated,
+    onUnauthorized: auth.handleUnauthorized,
+  });
   const navigation = useViewNavigation();
   const toastSystem = useToastSystem();
   const presentCategorySelection = useCallback(
@@ -86,6 +92,7 @@ const App = () => {
     showPendingOnly: masterFilters.showPendingOnly,
     setShowPendingOnly: masterFilters.setShowPendingOnly,
     syncMasterList: masterData.syncMasterList,
+    onUnauthorized: auth.handleUnauthorized,
   });
   const categorySelection = useCategorySelection({
     allCategories: masterLookups.categories,
@@ -109,20 +116,24 @@ const App = () => {
     syncMasterList: masterData.syncMasterList,
     reloadMasterList: masterData.fetchLists,
     addToast: toastSystem.addToast,
+    onUnauthorized: auth.handleUnauthorized,
   });
   const createCategoryModal = useCreateCategoryModal({
     addToast: toastSystem.addToast,
     fetchLists: masterData.fetchLists,
+    onUnauthorized: auth.handleUnauthorized,
   });
   const renameModal = useRenameModal({
     addToast: toastSystem.addToast,
     onMasterListUpdate: masterData.syncMasterList,
+    onUnauthorized: auth.handleUnauthorized,
   });
   const categoryDeletion = useCategoryDeletion({
     addToast: toastSystem.addToast,
     fetchLists: masterData.fetchLists,
     syncMasterList: masterData.syncMasterList,
     isApplying: applyState.isApplying,
+    onUnauthorized: auth.handleUnauthorized,
   });
   const handleRenameCategory = useCallback(
     (categoryId: string, currentName: string) =>
@@ -214,6 +225,25 @@ const App = () => {
     onSubmit: createCategoryModal.handleSubmit,
   });
 
+  const handleLogout = useCallback(() => {
+    void auth.logout();
+  }, [auth.logout]);
+
+  if (auth.checking) {
+    return <div className="auth-loading">Loading…</div>;
+  }
+
+  if (!auth.authenticated) {
+    return (
+      <LoginView
+        busy={auth.loggingIn}
+        error={auth.error}
+        onSubmit={auth.login}
+        onClearError={auth.clearError}
+      />
+    );
+  }
+
   return (
     <AppLayers
       toasts={toastSystem.toasts}
@@ -253,6 +283,8 @@ const App = () => {
             lists={lists}
             masterList={masterList}
             onManageMasterClick={navigation.handleNavigateToMaster}
+            actions={{ onLogout: handleLogout, disableLogout: auth.loggingIn || auth.checking || applyState.isApplying }}
+            email={auth.email}
           />
         )}
         {navigation.view === 'master' && pendingOps.hasPendingChanges && (

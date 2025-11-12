@@ -19,6 +19,9 @@ import {
   deleteMasterCategory,
   reorderMasterCategories,
 } from '../services/masterList/operations.js';
+import { createHttpError } from '../utils/httpError.js';
+
+const AUTH_REQUIRED_MESSAGE = 'Authentication required.';
 
 const masterRouter = Router();
 
@@ -29,12 +32,14 @@ function respondWithMasterList(res: Response, masterList: FormattedMasterList): 
 function registerMasterRoute<Input>(
   path: string,
   parse: (body: unknown) => Input,
-  operate: (input: Input) => Promise<FormattedMasterList>
+  operate: (sessionId: string, input: Input) => Promise<FormattedMasterList>
 ): void {
   masterRouter.post(
     path,
     asyncHandler(async (req, res) => {
-      const masterList = await operate(parse(req.body));
+      const sessionId = req.sessionId;
+      if (!sessionId) throw createHttpError(401, AUTH_REQUIRED_MESSAGE);
+      const masterList = await operate(sessionId, parse(req.body));
       respondWithMasterList(res, masterList);
     })
   );

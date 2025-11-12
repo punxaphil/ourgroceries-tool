@@ -32,13 +32,13 @@ async function loadMasterList(
   return formatMasterList(response, categories, lookup);
 }
 
-export async function getCategoryIndex(): Promise<CategoryIndexResult> {
-  const client = await getOurGroceriesClient();
+export async function getCategoryIndex(sessionId: string): Promise<CategoryIndexResult> {
+  const client = await getOurGroceriesClient(sessionId);
   return loadCategoryIndex(client);
 }
 
-export async function getListsPayload(): Promise<ListsPayload> {
-  const client = await getOurGroceriesClient();
+export async function getListsPayload(sessionId: string): Promise<ListsPayload> {
+  const client = await getOurGroceriesClient(sessionId);
   const overview = await loadOverview(client);
   const lists = ensureShoppingLists(extractShoppingLists(overview));
   const { categories, lookup } = await loadCategoryIndex(client);

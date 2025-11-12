@@ -9,6 +9,6 @@ async function applyMoves(client: OurGroceries, input: MoveMasterItemsInput) {
   );
 }
 
-export function moveMasterItems(input: MoveMasterItemsInput): Promise<FormattedMasterList> {
-  return mutateMasterList((client) => applyMoves(client, input));
+export function moveMasterItems(sessionId: string, input: MoveMasterItemsInput): Promise<FormattedMasterList> {
+  return mutateMasterList(sessionId, (client) => applyMoves(client, input));
 }

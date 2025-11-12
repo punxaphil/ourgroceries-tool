@@ -27,8 +27,8 @@ export function postCommand(client: OurGroceries): Poster {
   return poster.post.bind(client);
 }
 
-export async function mutateMasterList(action: MutateAction): Promise<FormattedMasterList> {
-  const client = await getOurGroceriesClient();
+export async function mutateMasterList(sessionId: string, action: MutateAction): Promise<FormattedMasterList> {
+  const client = await getOurGroceriesClient(sessionId);
   await action(client);
-  return fetchMasterList();
+  return fetchMasterList(sessionId);
 }

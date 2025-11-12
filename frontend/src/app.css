@@ -5,6 +5,7 @@
 
 :root {
   --pending-color: #e0f2fe;
+  --header-height: 64px;
 }
 
 body {
@@ -22,7 +23,7 @@ main.container {
   background: #fff;
   border-radius: 16px;
   box-shadow: 0 20px 40px rgba(31, 41, 55, 0.12);
-  height: calc(100vh - 24px);
+  height: calc(100vh - 24px - var(--header-height));
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -104,7 +105,8 @@ button {
 .toast-container {
   /* Toasts are now positioned per-item near the pointer; container no longer controls layout */
   position: static;
-  display: contents; /* Allow each .toast to render in its own fixed position */
+  display: contents;
+  /* Allow each .toast to render in its own fixed position */
 }
 
 .toast {
@@ -251,7 +253,8 @@ section {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #6b7280;
-  line-height: 24px; /* Match info icon height for better vertical alignment */
+  line-height: 24px;
+  /* Match info icon height for better vertical alignment */
   display: inline-block;
   vertical-align: middle;
 }
@@ -265,7 +268,8 @@ section {
   width: 24px;
   height: 24px;
   line-height: 1;
-  margin: 0; /* Ensure no top margin */
+  margin: 0;
+  /* Ensure no top margin */
   border: 1px solid rgba(31, 41, 55, 0.2);
   background: #fff;
   color: #374151;
@@ -419,7 +423,8 @@ section {
 
 .category-chip {
   flex: 1;
-  padding: 0.3rem 0.9rem; /* Reduced vertical padding ~50% */
+  padding: 0.3rem 0.9rem;
+  /* Reduced vertical padding ~50% */
   border-radius: 999px;
   border: 1px solid rgba(31, 41, 55, 0.1);
   color: #1f2937;
@@ -616,7 +621,8 @@ section {
     transform 0.1s ease,
     box-shadow 0.1s ease,
     border-color 0.1s ease;
-  cursor: pointer; /* Make entire item clickable */
+  cursor: pointer;
+  /* Make entire item clickable */
 }
 
 .category-item:hover {
@@ -647,7 +653,8 @@ section {
   border-radius: 10px 0 0 10px;
   /* Cursor handled by parent (.category-item); keep this a passive container */
   text-align: left;
-  min-width: 0; /* Allow flex child to shrink for long text */
+  min-width: 0;
+  /* Allow flex child to shrink for long text */
 }
 
 .item-main:disabled {
@@ -657,10 +664,14 @@ section {
 .item-name {
   font-weight: 600;
   color: #111827;
-  white-space: normal; /* Allow wrapping */
-  word-break: break-word; /* Break long unspaced strings */
-  overflow-wrap: anywhere; /* Force wrap for very long words */
-  max-width: 100%; /* Constrain within flex item */
+  white-space: normal;
+  /* Allow wrapping */
+  word-break: break-word;
+  /* Break long unspaced strings */
+  overflow-wrap: anywhere;
+  /* Force wrap for very long words */
+  max-width: 100%;
+  /* Constrain within flex item */
 }
 
 .item-tag {
@@ -967,4 +978,104 @@ section {
   justify-content: flex-end;
   align-items: center;
   gap: 0.75rem;
+}
+
+.app-header-email {
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.overview-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-size: 1.25rem;
+  color: #1f2937;
+}
+
+.login-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: linear-gradient(120deg, #f8fafc 0%, #e2e8f0 100%);
+  padding: 24px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 360px;
+  padding: 32px;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+.login-form h1 {
+  margin: 0 0 8px;
+  font-size: 1.5rem;
+  color: #0f172a;
+  text-align: center;
+}
+
+.login-form label {
+  font-size: 0.875rem;
+  color: #334155;
+}
+
+.login-form input {
+  padding: 10px 12px;
+  border: 1px solid #cbd5f5;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-form input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  outline: none;
+}
+
+.login-form button {
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: #2563eb;
+  color: #ffffff;
+  transition: background 0.2s ease;
+}
+
+.login-form button:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.login-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 0.9rem;
 }

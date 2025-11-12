@@ -1,6 +1,7 @@
 import { DragEvent, Dispatch, SetStateAction, useCallback, useState } from 'react';
 import { FALLBACK_CATEGORY_NAME, UNCATEGORIZED_ID } from '../utils/appUtils';
 import { MasterList, MasterListSection } from '../types';
+import { handleUnauthorized, UNAUTHORIZED_ERROR } from './apiUtils';
 
 type MasterListUpdater = (transform: (current: MasterList) => MasterList) => void;
 
@@ -10,6 +11,7 @@ type UseCategoryReorderingArgs = {
   syncMasterList: (next: MasterList) => void;
   reloadMasterList: () => Promise<void>;
   addToast: (message: string) => void;
+  onUnauthorized: () => void;
 };
 
 type UseCategoryReorderingResult = {
@@ -84,12 +86,16 @@ const parseErrorMessage = async (response: Response): Promise<string> => {
   }
 };
 
-const sendReorderRequest = async (details: DropDetails): Promise<MasterList | null> => {
+const sendReorderRequest = async (
+  details: DropDetails,
+  onUnauthorized: () => void
+): Promise<MasterList | null> => {
   const response = await fetch('/api/master/reorder-categories', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ itemId: details.sourceId, nextItemId: details.nextItemId }),
   });
+  if (handleUnauthorized(response, onUnauthorized)) throw new Error(UNAUTHORIZED_ERROR);
   if (!response.ok) throw new Error(await parseErrorMessage(response));
   const payload = await response.json();
   return (payload?.masterList as MasterList | undefined) ?? null;
@@ -99,10 +105,11 @@ const finalizeReorder = async (
   details: DropDetails,
   syncMasterList: (next: MasterList) => void,
   reloadMasterList: () => Promise<void>,
-  addToast: (message: string) => void
+  addToast: (message: string) => void,
+  onUnauthorized: () => void
 ) => {
   try {
-    const masterList = await sendReorderRequest(details);
+    const masterList = await sendReorderRequest(details, onUnauthorized);
     if (masterList) syncMasterList(masterList);
     addToast('Categories reordered');
   } catch (error) {
@@ -135,6 +142,7 @@ const createDropHandler = (args: {
   onMasterListOptimisticUpdate: MasterListUpdater;
   syncMasterList: (next: MasterList) => void;
   reloadMasterList: () => Promise<void>;
+  onUnauthorized: () => void;
 }) => {
   return async (event: DragEvent<HTMLElement>, targetId: string) => {
     event.preventDefault();
@@ -142,7 +150,7 @@ const createDropHandler = (args: {
     if (!details) return args.resetDragState();
     applyOptimisticUpdate(args.onMasterListOptimisticUpdate, details);
     args.resetDragState();
-    await finalizeReorder(details, args.syncMasterList, args.reloadMasterList, args.addToast);
+    await finalizeReorder(details, args.syncMasterList, args.reloadMasterList, args.addToast, args.onUnauthorized);
   };
 };
 
@@ -162,6 +170,7 @@ export const useCategoryReordering = ({
   syncMasterList,
   reloadMasterList,
   addToast,
+  onUnauthorized,
 }: UseCategoryReorderingArgs): UseCategoryReorderingResult => {
   const { draggedCategoryId, dragOverCategoryId, setDraggedCategoryId, setDragOverCategoryId, resetDragState } =
     useDragState();
@@ -179,6 +188,7 @@ export const useCategoryReordering = ({
       onMasterListOptimisticUpdate,
       syncMasterList,
       reloadMasterList,
+      onUnauthorized,
     }),
     [
       draggedCategoryId,
@@ -188,6 +198,7 @@ export const useCategoryReordering = ({
       onMasterListOptimisticUpdate,
       syncMasterList,
       reloadMasterList,
+      onUnauthorized,
     ]
   );
 

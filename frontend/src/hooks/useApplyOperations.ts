@@ -1,6 +1,7 @@
 import { Dispatch, SetStateAction, useCallback, useState } from 'react';
 import { denormalizeCategoryId } from '../utils/appUtils';
 import { ApplyStep, ApplyStepStatus, MasterList, PendingDeleteEntry, PendingMoveEntry } from '../types';
+import { handleUnauthorized, UNAUTHORIZED_ERROR } from './apiUtils';
 
 type PendingMap<Entry> = Record<string, Entry>;
 type PendingSetter<Entry> = Dispatch<SetStateAction<PendingMap<Entry>>>;
@@ -16,6 +17,7 @@ type UseApplyOperationsArgs = {
   showPendingOnly: boolean;
   setShowPendingOnly: Dispatch<SetStateAction<boolean>>;
   syncMasterList: (next: MasterList) => void;
+  onUnauthorized: () => void;
 };
 
 export type UseApplyOperationsResult = {
@@ -96,7 +98,11 @@ const updateApplyStepStatus =
     setTimeout(scrollApplyList, 0);
   };
 
-const requestMove = async (listId: string, step: ApplyStep): Promise<MasterList | null> => {
+const requestMove = async (
+  listId: string,
+  step: ApplyStep,
+  onUnauthorized: () => void
+): Promise<MasterList | null> => {
   const targetId = step.targetCategoryId;
   if (!targetId) throw new Error(REQUEST_FAILED);
   const response = await fetch('/api/master/move', {
@@ -108,6 +114,7 @@ const requestMove = async (listId: string, step: ApplyStep): Promise<MasterList 
       target_category_id: denormalizeCategoryId(targetId),
     }),
   });
+  if (handleUnauthorized(response, onUnauthorized)) throw new Error(UNAUTHORIZED_ERROR);
   if (!response.ok) {
     const message = await response.text();
     throw new Error(message || REQUEST_FAILED);
@@ -116,12 +123,17 @@ const requestMove = async (listId: string, step: ApplyStep): Promise<MasterList 
   return (payload?.masterList as MasterList | undefined) ?? null;
 };
 
-const requestDelete = async (listId: string, step: ApplyStep): Promise<MasterList | null> => {
+const requestDelete = async (
+  listId: string,
+  step: ApplyStep,
+  onUnauthorized: () => void
+): Promise<MasterList | null> => {
   const response = await fetch('/api/master/delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ list_id: listId, item_ids: [step.itemId] }),
   });
+  if (handleUnauthorized(response, onUnauthorized)) throw new Error(UNAUTHORIZED_ERROR);
   if (!response.ok) {
     const message = await response.text();
     throw new Error(message || REQUEST_FAILED);
@@ -164,6 +176,7 @@ export const useApplyOperations = ({
   showPendingOnly,
   setShowPendingOnly,
   syncMasterList,
+  onUnauthorized,
 }: UseApplyOperationsArgs): UseApplyOperationsResult => {
   const [applyModalOpen, setApplyModalOpen] = useState(false);
   const [applySteps, setApplySteps] = useState<ApplyStep[]>([]);
@@ -185,7 +198,10 @@ export const useApplyOperations = ({
             const stepIndex = index + offset;
             updateStatus(stepIndex, 'running');
             try {
-              const master = step.type === 'move' ? await requestMove(listId, step) : await requestDelete(listId, step);
+              const master =
+                step.type === 'move'
+                  ? await requestMove(listId, step, onUnauthorized)
+                  : await requestDelete(listId, step, onUnauthorized);
               if (master) syncMasterList(master);
               if (step.type === 'move') remainingMoveIds.delete(step.itemId);
               if (step.type === 'delete') remainingDeleteIds.delete(step.itemId);
@@ -225,6 +241,7 @@ export const useApplyOperations = ({
       setShowPendingOnly,
       showPendingOnly,
       syncMasterList,
+      onUnauthorized,
       updateStatus,
     ]
   );

@@ -6,6 +6,9 @@ async function applyCreateCategory(client: OurGroceries, input: CreateMasterCate
   await client.createCategory(input.name);
 }
 
-export function createMasterCategory(input: CreateMasterCategoryInput): Promise<FormattedMasterList> {
-  return mutateMasterList((client) => applyCreateCategory(client, input));
+export function createMasterCategory(
+  sessionId: string,
+  input: CreateMasterCategoryInput
+): Promise<FormattedMasterList> {
+  return mutateMasterList(sessionId, (client) => applyCreateCategory(client, input));
 }

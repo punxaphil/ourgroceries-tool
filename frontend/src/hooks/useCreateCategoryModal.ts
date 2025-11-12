@@ -1,10 +1,12 @@
 import { useCallback, useState } from 'react';
+import { handleUnauthorized, UNAUTHORIZED_ERROR } from './apiUtils';
 
 const REQUEST_FAILED = 'Create category failed';
 
 export interface UseCreateCategoryModalArgs {
   addToast: (message: string) => void;
   fetchLists: () => Promise<void>;
+  onUnauthorized: () => void;
 }
 
 export interface UseCreateCategoryModalResult {
@@ -27,12 +29,13 @@ const readErrorDetail = (text: string) => {
   }
 };
 
-const requestCreateCategory = async (name: string) => {
+const requestCreateCategory = async (name: string, onUnauthorized: () => void) => {
   const response = await fetch('/api/master/create-category', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   });
+  if (handleUnauthorized(response, onUnauthorized)) throw new Error(UNAUTHORIZED_ERROR);
   if (response.ok) return;
   const detail = readErrorDetail(await response.text());
   throw new Error(detail || REQUEST_FAILED);
@@ -41,6 +44,7 @@ const requestCreateCategory = async (name: string) => {
 export const useCreateCategoryModal = ({
   addToast,
   fetchLists,
+  onUnauthorized,
 }: UseCreateCategoryModalArgs): UseCreateCategoryModalResult => {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -63,7 +67,7 @@ export const useCreateCategoryModal = ({
     if (!trimmed || isCreating) return;
     setIsCreating(true);
     try {
-      await requestCreateCategory(trimmed);
+      await requestCreateCategory(trimmed, onUnauthorized);
       addToast(`Category "${trimmed}" created`);
       await fetchLists();
       setOpen(false);
@@ -75,7 +79,7 @@ export const useCreateCategoryModal = ({
     } finally {
       setIsCreating(false);
     }
-  }, [name, isCreating, addToast, fetchLists]);
+  }, [name, isCreating, addToast, fetchLists, onUnauthorized]);
 
   return { open, name, isCreating, setName, handleOpen, handleClose, handleSubmit };
 };

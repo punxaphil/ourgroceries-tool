@@ -1,9 +1,11 @@
 import { useCallback, useState } from 'react';
 import { MasterList, RenameTarget } from '../types';
+import { handleUnauthorized, UNAUTHORIZED_ERROR } from './apiUtils';
 
 type UseRenameModalArgs = {
   addToast: (message: string) => void;
   onMasterListUpdate: (next: MasterList) => void;
+  onUnauthorized: () => void;
 };
 
 type PreparedRename = {
@@ -52,20 +54,26 @@ const renamePayload = (target: RenameTarget, name: string) => {
   return { endpoint: '/api/master/rename-item', body: { itemId: target.id, newName: name } };
 };
 
-const requestRename = async (target: RenameTarget, name: string) => {
+const requestRename = async (
+  target: RenameTarget,
+  name: string,
+  onUnauthorized: () => void
+) => {
   const { endpoint, body } = renamePayload(target, name);
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+  if (handleUnauthorized(response, onUnauthorized)) throw new Error(UNAUTHORIZED_ERROR);
   if (response.ok) return;
   throw new Error(await parseError(response, RENAME_FAILURE));
 };
 
-const loadMasterList = async (): Promise<MasterList | null> => {
+const loadMasterList = async (onUnauthorized: () => void): Promise<MasterList | null> => {
   try {
     const response = await fetch('/api/lists');
+    if (handleUnauthorized(response, onUnauthorized)) return null;
     if (!response.ok) return null;
     const payload = (await response.json()) as { masterList?: MasterList | null };
     return payload?.masterList ?? null;
@@ -81,7 +89,7 @@ const prepareRename = (target: RenameTarget | null, value: string, busy: boolean
   return { target, name };
 };
 
-export const useRenameModal = ({ addToast, onMasterListUpdate }: UseRenameModalArgs): UseRenameModalResult => {
+export const useRenameModal = ({ addToast, onMasterListUpdate, onUnauthorized }: UseRenameModalArgs): UseRenameModalResult => {
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -105,13 +113,13 @@ export const useRenameModal = ({ addToast, onMasterListUpdate }: UseRenameModalA
 
   const completeRename = useCallback(
     async (target: RenameTarget, name: string) => {
-      await requestRename(target, name);
+      await requestRename(target, name, onUnauthorized);
       addToast(`Renamed to "${name}"`);
-      const masterList = await loadMasterList();
+      const masterList = await loadMasterList(onUnauthorized);
       if (masterList) onMasterListUpdate(masterList);
       closeRename();
     },
-    [addToast, closeRename, onMasterListUpdate]
+    [addToast, closeRename, onMasterListUpdate, onUnauthorized]
   );
 
   const openRename = useCallback((target: RenameTarget) => {

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { readApiError } from './apiUtils';
+import { handleUnauthorized, readApiError, UNAUTHORIZED_ERROR } from './apiUtils';
 import { MasterList } from '../types';
 
 type Toast = (message: string) => void;
@@ -12,12 +12,16 @@ const successMessage = (name: string) => `Category "${name}" deleted`;
 const confirmDeletion = (name: string) =>
   window.confirm(`Delete category "${name}"? Items in this category will become uncategorized.`);
 
-const requestDelete = async (categoryId: string): Promise<MasterList | null> => {
+const requestDelete = async (
+  categoryId: string,
+  onUnauthorized: () => void
+): Promise<MasterList | null> => {
   const response = await fetch(ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ categoryId }),
   });
+  if (handleUnauthorized(response, onUnauthorized)) throw new Error(UNAUTHORIZED_ERROR);
   if (!response.ok) throw new Error(await readApiError(response));
   const payload = await response.json();
   return (payload?.masterList as MasterList | null) ?? null;
@@ -28,6 +32,7 @@ export interface UseCategoryDeletionArgs {
   fetchLists: FetchLists;
   syncMasterList: SyncMaster;
   isApplying: boolean;
+  onUnauthorized: () => void;
 }
 
 export interface UseCategoryDeletionResult {
@@ -40,6 +45,7 @@ export const useCategoryDeletion = ({
   fetchLists,
   syncMasterList,
   isApplying,
+  onUnauthorized,
 }: UseCategoryDeletionArgs): UseCategoryDeletionResult => {
   const [isDeleting, setInternalIsDeleting] = useState(false);
   const isDeletingRef = useRef(false);
@@ -55,7 +61,7 @@ export const useCategoryDeletion = ({
       if (!confirmDeletion(categoryName)) return;
       setDeleting(true);
       try {
-        const master = await requestDelete(categoryId);
+        const master = await requestDelete(categoryId, onUnauthorized);
         if (master) syncMasterList(master);
         await fetchLists();
         addToast(successMessage(categoryName));
@@ -67,7 +73,7 @@ export const useCategoryDeletion = ({
         setDeleting(false);
       }
     },
-    [addToast, fetchLists, isApplying, setDeleting, syncMasterList]
+    [addToast, fetchLists, isApplying, onUnauthorized, setDeleting, syncMasterList]
   );
 
   return { isDeleting, deleteCategory };

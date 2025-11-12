@@ -1,20 +1,12 @@
 import 'dotenv/config';
 import { createApp } from './server/app.js';
 import { getEnvNumber } from './server/utils/env.js';
-import { getOurGroceriesClient, clearOurGroceriesClientCache } from './server/services/ourGroceriesClient.js';
+import { clearOurGroceriesClientCache } from './server/services/ourGroceriesClient.js';
 
 const DEFAULT_PORT = 8000;
 
 function resolvePort(): number {
   return getEnvNumber('PORT', DEFAULT_PORT) ?? DEFAULT_PORT;
-}
-
-async function warmClient(): Promise<void> {
-  try {
-    await getOurGroceriesClient();
-  } catch (error) {
-    console.error('Failed to establish initial OurGroceries connection:', error);
-  }
 }
 
 function shutdown(): void {
@@ -33,7 +25,6 @@ function start(): void {
   registerShutdown();
   app.listen(port, () => {
     console.info(`Server is running at http://localhost:${port}`);
-    void warmClient();
   });
 }
 

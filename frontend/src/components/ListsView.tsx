@@ -15,6 +15,11 @@ type ListsViewProps = {
   lists: ShoppingListEntry[];
   masterList: MasterListSummary | null;
   onManageMasterClick: () => void;
+  actions: {
+    onLogout: () => void;
+    disableLogout: boolean;
+  };
+  email: string | null;
 };
 
 function renderHeader() {
@@ -49,10 +54,18 @@ function renderMasterButton(masterList: MasterListSummary | null, onManageMaster
   );
 }
 
-function ListsView({ status, lists, masterList, onManageMasterClick }: ListsViewProps) {
+function ListsView({ status, lists, masterList, onManageMasterClick, actions, email }: ListsViewProps) {
   return (
     <>
-      {renderHeader()}
+      <div className="overview-header">
+        {renderHeader()}
+        <div className="overview-actions">
+          <span className="app-header-email">Signed in as {email ?? 'unknown user'}</span>
+          <button type="button" className="secondary-btn" onClick={actions.onLogout} disabled={actions.disableLogout}>
+            Log out
+          </button>
+        </div>
+      </div>
       {renderStatus(status)}
       {renderShoppingSection(lists)}
       {renderMasterButton(masterList, onManageMasterClick)}

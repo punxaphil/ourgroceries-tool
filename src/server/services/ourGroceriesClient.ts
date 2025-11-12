@@ -1,58 +1,71 @@
 import { InvalidLoginException, OurGroceries } from 'ourgroceries';
-import { requireEnvString } from '../utils/env.js';
+import { createHttpError } from '../utils/httpError.js';
+import { createSession, findSession, removeSession, resetSessions } from './sessionStore.js';
 
-type ClientPromise = Promise<OurGroceries> | null;
+type ClientPromise = Promise<OurGroceries>;
 
-const EMAIL_ENV = 'OURGROCERIES_EMAIL';
-const PASSWORD_ENV = 'OURGROCERIES_PASSWORD';
 const LOGIN_FAILURE_MESSAGE = 'OurGroceries login failed.';
-const PLACEHOLDER_EMAIL = 'your_email@example.com';
-const PLACEHOLDER_EMAIL_ERROR = 'OURGROCERIES_EMAIL is using the placeholder value.';
+const SESSION_MISSING_MESSAGE = 'Session not found.';
 
-let cachedClientPromise: ClientPromise = null;
+const clientCache: Map<string, ClientPromise> = new Map();
 
-function ensureRealEmail(email: string) {
-  if (email === PLACEHOLDER_EMAIL) {
-    throw new Error(PLACEHOLDER_EMAIL_ERROR);
+const toLoginError = (error: unknown): Error => {
+  if (error instanceof InvalidLoginException) return createHttpError(401, LOGIN_FAILURE_MESSAGE);
+  if (error instanceof Error) return error;
+  return createHttpError(500, String(error));
+};
+
+const loginClient = async (email: string, password: string): Promise<OurGroceries> => {
+  const client = new OurGroceries({ username: email, password });
+  try {
+    await client.login();
+    return client;
+  } catch (error) {
+    throw toLoginError(error);
   }
-  return email;
-}
+};
 
-function mapLoginError(error: unknown): never {
-  if (error instanceof InvalidLoginException) {
-    throw new Error(LOGIN_FAILURE_MESSAGE);
-  }
-  if (error instanceof Error) {
+const requireSessionRecord = (sessionId: string) => {
+  const session = findSession(sessionId);
+  if (session) return session;
+  throw createHttpError(401, SESSION_MISSING_MESSAGE);
+};
+
+export const loginSession = async (email: string, password: string): Promise<string> => {
+  const session = createSession(email, password);
+  const promise = loginClient(email, password);
+  clientCache.set(session.id, promise);
+  try {
+    await promise;
+    return session.id;
+  } catch (error) {
+    clientCache.delete(session.id);
+    removeSession(session.id);
     throw error;
   }
-  throw new Error(String(error));
-}
+};
 
-function readCredentials() {
-  const email = ensureRealEmail(requireEnvString(EMAIL_ENV));
-  const password = requireEnvString(PASSWORD_ENV);
-  return { email, password };
-}
-
-async function createClient() {
-  const { email, password } = readCredentials();
-  const client = new OurGroceries({ username: email, password });
-  await client.login().catch(mapLoginError);
-  return client;
-}
-
-export async function getOurGroceriesClient() {
-  if (!cachedClientPromise) {
-    cachedClientPromise = createClient();
+export const getOurGroceriesClient = async (sessionId: string): Promise<OurGroceries> => {
+  const session = requireSessionRecord(sessionId);
+  let promise = clientCache.get(sessionId);
+  if (!promise) {
+    promise = loginClient(session.email, session.password);
+    clientCache.set(sessionId, promise);
   }
   try {
-    return await cachedClientPromise;
+    return await promise;
   } catch (error) {
-    cachedClientPromise = null;
+    clientCache.delete(sessionId);
     throw error;
   }
-}
+};
 
-export function clearOurGroceriesClientCache() {
-  cachedClientPromise = null;
-}
+export const logoutSession = (sessionId: string): void => {
+  clientCache.delete(sessionId);
+  removeSession(sessionId);
+};
+
+export const clearOurGroceriesClientCache = (): void => {
+  clientCache.clear();
+  resetSessions();
+};

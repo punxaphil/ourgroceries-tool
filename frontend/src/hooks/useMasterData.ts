@@ -10,6 +10,7 @@ type MasterListTransform = (current: MasterList) => MasterList;
 
 const INITIAL_STATUS = 'Loading lists…';
 const REQUEST_ERROR = 'Unable to load lists. Check credentials and try again.';
+const UNAUTHORIZED_STATUS = 'Please log in to continue.';
 
 export interface UseMasterDataResult {
   data: MasterData;
@@ -18,6 +19,11 @@ export interface UseMasterDataResult {
   fetchLists: () => Promise<void>;
   applyMasterListTransform: (transform: MasterListTransform) => void;
   syncMasterList: (next: MasterList) => void;
+}
+
+export interface UseMasterDataOptions {
+  enabled: boolean;
+  onUnauthorized: () => void;
 }
 
 const readListsPayload = (payload: unknown): MasterData => {
@@ -50,15 +56,27 @@ const hydrateMasterData = async (response: Response): Promise<MasterData | null>
   }
 };
 
-export const useMasterData = (): UseMasterDataResult => {
+export const useMasterData = ({ enabled, onUnauthorized }: UseMasterDataOptions): UseMasterDataResult => {
   const [data, setData] = useState<MasterData>({ lists: [], masterList: null });
   const [status, setStatus] = useState<string | null>(INITIAL_STATUS);
   const [loading, setLoading] = useState(true);
 
   const fetchLists = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      setStatus(INITIAL_STATUS);
+      setData({ lists: [], masterList: null });
+      return;
+    }
     try {
       setLoading(true);
       const response = await fetch('/api/lists');
+      if (response.status === 401) {
+        onUnauthorized();
+        setStatus(UNAUTHORIZED_STATUS);
+        setData({ lists: [], masterList: null });
+        return;
+      }
       const nextData = await hydrateMasterData(response);
       if (!nextData) {
         setStatus(REQUEST_ERROR);
@@ -72,10 +90,10 @@ export const useMasterData = (): UseMasterDataResult => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled, onUnauthorized]);
 
   useEffect(() => {
-    fetchLists();
+    void fetchLists();
   }, [fetchLists]);
 
   const applyMasterListTransform = useCallback((transform: MasterListTransform) => {
