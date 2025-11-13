@@ -12,20 +12,20 @@ interface ApplyModalProps {
   onRemoveStep: (step: ApplyStep) => void;
 }
 
-const statusLabel = (step: ApplyStep): string => {
+function statusLabel(step: ApplyStep): string {
   if (step.status === 'pending') return 'Pending';
   if (step.status === 'running') return 'In progress';
   if (step.status === 'success') return 'Done';
   const message = step.errorMessage ? `: ${step.errorMessage}` : '';
   return `Failed${message}`;
-};
+}
 
-const summaryText = (moveCount: number, deleteCount: number): string | null => {
+function summaryText(moveCount: number, deleteCount: number): string | null {
   if (moveCount === 0 && deleteCount === 0) return null;
   const moveSuffix = moveCount === 1 ? '' : 's';
   const deleteSuffix = deleteCount === 1 ? '' : 's';
   return `${moveCount} move${moveSuffix}, ${deleteCount} delete${deleteSuffix}`;
-};
+}
 
 export function ApplyModal({
   open,

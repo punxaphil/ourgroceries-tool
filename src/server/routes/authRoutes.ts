@@ -9,18 +9,18 @@ const authRouter = Router();
 
 const INVALID_CREDENTIALS_MESSAGE = 'Email and password are required.';
 
-const normalize = (value: unknown) => {
+function normalize(value: unknown): string {
   if (typeof value !== 'string') return '';
   return value.trim();
-};
+}
 
-const readCredentials = (body: unknown) => {
+function readCredentials(body: unknown): { email: string; password: string } {
   const source = (body as Record<string, unknown>) ?? {};
   const email = normalize(source.email);
   const password = normalize(source.password);
   if (!email || !password) throw createHttpError(400, INVALID_CREDENTIALS_MESSAGE);
   return { email, password };
-};
+}
 
 authRouter.get(
   '/status',

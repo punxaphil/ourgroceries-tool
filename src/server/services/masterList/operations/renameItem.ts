@@ -8,9 +8,6 @@ async function applyRename(sessionId: string, client: OurGroceries, input: Renam
   await changeItem(client)(listId, input.itemId, categoryId, input.newName);
 }
 
-export function renameMasterItem(
-  sessionId: string,
-  input: RenameMasterItemInput
-): Promise<FormattedMasterList> {
+export function renameMasterItem(sessionId: string, input: RenameMasterItemInput): Promise<FormattedMasterList> {
   return mutateMasterList(sessionId, (client) => applyRename(sessionId, client, input));
 }

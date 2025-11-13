@@ -98,11 +98,7 @@ const updateApplyStepStatus =
     setTimeout(scrollApplyList, 0);
   };
 
-const requestMove = async (
-  listId: string,
-  step: ApplyStep,
-  onUnauthorized: () => void
-): Promise<MasterList | null> => {
+const requestMove = async (listId: string, step: ApplyStep, onUnauthorized: () => void): Promise<MasterList | null> => {
   const targetId = step.targetCategoryId;
   if (!targetId) throw new Error(REQUEST_FAILED);
   const response = await fetch('/api/master/move', {

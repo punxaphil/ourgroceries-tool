@@ -36,7 +36,7 @@ type CategorySelectionPresentation = Required<
   position: Exclude<CategorySelectionOptions['position'], undefined>;
 };
 
-const App = () => {
+function App(): React.JSX.Element {
   const auth = useAuth();
   const masterData = useMasterData({
     enabled: auth.authenticated,
@@ -44,20 +44,18 @@ const App = () => {
   });
   const navigation = useViewNavigation();
   const toastSystem = useToastSystem();
-  const presentCategorySelection = useCallback(
-    (options: CategorySelectionPresentation) => {
-      const position = options.position ? { x: options.position.x ?? 0, y: options.position.y ?? 0 } : null;
-      const payload: CategorySelectionOptions = {
-        lines: options.lines,
-        selectedIndex: options.selectedIndex,
-        keyLetter: options.keyLetter,
-        groupIds: options.groupIds,
-        position,
-      };
-      toastSystem.showCategorySelection(payload);
-    },
-    [toastSystem.showCategorySelection]
-  );
+  function presentCategorySelectionCallback(options: CategorySelectionPresentation): void {
+    const position = options.position ? { x: options.position.x ?? 0, y: options.position.y ?? 0 } : null;
+    const payload: CategorySelectionOptions = {
+      lines: options.lines,
+      selectedIndex: options.selectedIndex,
+      keyLetter: options.keyLetter,
+      groupIds: options.groupIds,
+      position,
+    };
+    toastSystem.showCategorySelection(payload);
+  }
+  const presentCategorySelection = useCallback(presentCategorySelectionCallback, [toastSystem.showCategorySelection]);
   const { masterList, lists } = masterData.data;
   const masterLookups = useMasterListLookups(masterList);
   const pendingOps = usePendingOperations({
@@ -135,28 +133,30 @@ const App = () => {
     isApplying: applyState.isApplying,
     onUnauthorized: auth.handleUnauthorized,
   });
-  const handleRenameCategory = useCallback(
-    (categoryId: string, currentName: string) =>
-      renameModal.openRename({ type: 'category', id: categoryId, currentName }),
-    [renameModal.openRename]
-  );
-  const handleRenameItem = useCallback(
-    (itemId: string, currentName: string) => renameModal.openRename({ type: 'item', id: itemId, currentName }),
-    [renameModal.openRename]
-  );
-  const handleDeleteCategory = useCallback(
-    (categoryId: string, categoryName: string) => categoryDeletion.deleteCategory(categoryId, categoryName),
-    [categoryDeletion.deleteCategory]
-  );
-  const handleToastLayerCategorySelect = useCallback(
-    (toast: CategorySelectionToast, index: number) => {
-      categorySelection.handleCategoryToastSelect(
-        { groupIds: toast.groupIds ?? undefined, keyLetter: toast.keyLetter, x: toast.x, y: toast.y },
-        index
-      );
-    },
-    [categorySelection.handleCategoryToastSelect]
-  );
+  function handleRenameCategoryCallback(categoryId: string, currentName: string): void {
+    renameModal.openRename({ type: 'category', id: categoryId, currentName });
+  }
+  const handleRenameCategory = useCallback(handleRenameCategoryCallback, [renameModal.openRename]);
+
+  function handleRenameItemCallback(itemId: string, currentName: string): void {
+    renameModal.openRename({ type: 'item', id: itemId, currentName });
+  }
+  const handleRenameItem = useCallback(handleRenameItemCallback, [renameModal.openRename]);
+
+  function handleDeleteCategoryCallback(categoryId: string, categoryName: string): void {
+    categoryDeletion.deleteCategory(categoryId, categoryName);
+  }
+  const handleDeleteCategory = useCallback(handleDeleteCategoryCallback, [categoryDeletion.deleteCategory]);
+
+  function handleToastLayerCategorySelectCallback(toast: CategorySelectionToast, index: number): void {
+    categorySelection.handleCategoryToastSelect(
+      { groupIds: toast.groupIds ?? undefined, keyLetter: toast.keyLetter, x: toast.x, y: toast.y },
+      index
+    );
+  }
+  const handleToastLayerCategorySelect = useCallback(handleToastLayerCategorySelectCallback, [
+    categorySelection.handleCategoryToastSelect,
+  ]);
   const masterUnavailable = !masterData.loading && !masterList;
   const totalItemCount = masterList?.itemCount ?? 0;
   const masterSectionsState = useMasterSections({
@@ -225,23 +225,17 @@ const App = () => {
     onSubmit: createCategoryModal.handleSubmit,
   });
 
-  const handleLogout = useCallback(() => {
+  function handleLogoutCallback(): void {
     void auth.logout();
-  }, [auth.logout]);
+  }
+  const handleLogout = useCallback(handleLogoutCallback, [auth.logout]);
 
   if (auth.checking) {
     return <div className="auth-loading">Loading…</div>;
   }
 
   if (!auth.authenticated) {
-    return (
-      <LoginView
-        busy={auth.loggingIn}
-        error={auth.error}
-        onSubmit={auth.login}
-        onClearError={auth.clearError}
-      />
-    );
+    return <LoginView busy={auth.loggingIn} error={auth.error} onSubmit={auth.login} onClearError={auth.clearError} />;
   }
 
   return (
@@ -283,7 +277,10 @@ const App = () => {
             lists={lists}
             masterList={masterList}
             onManageMasterClick={navigation.handleNavigateToMaster}
-            actions={{ onLogout: handleLogout, disableLogout: auth.loggingIn || auth.checking || applyState.isApplying }}
+            actions={{
+              onLogout: handleLogout,
+              disableLogout: auth.loggingIn || auth.checking || applyState.isApplying,
+            }}
             email={auth.email}
           />
         )}
@@ -299,6 +296,6 @@ const App = () => {
       </main>
     </AppLayers>
   );
-};
+}
 
 export default App;

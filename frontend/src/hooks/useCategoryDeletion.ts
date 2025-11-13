@@ -12,10 +12,7 @@ const successMessage = (name: string) => `Category "${name}" deleted`;
 const confirmDeletion = (name: string) =>
   window.confirm(`Delete category "${name}"? Items in this category will become uncategorized.`);
 
-const requestDelete = async (
-  categoryId: string,
-  onUnauthorized: () => void
-): Promise<MasterList | null> => {
+const requestDelete = async (categoryId: string, onUnauthorized: () => void): Promise<MasterList | null> => {
   const response = await fetch(ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

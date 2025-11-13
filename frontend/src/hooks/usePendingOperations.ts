@@ -4,6 +4,22 @@ import { MasterList, MasterListItem, PendingDeleteEntry, PendingMoveEntry } from
 
 type PendingMap<Entry> = Record<string, Entry>;
 
+interface StoredMoveEntry {
+  itemId?: string;
+  targetCategoryId?: string;
+  targetCategoryName?: string;
+}
+
+interface StoredDeleteEntry {
+  itemId?: string;
+  itemName?: string;
+}
+
+interface StoredPayload {
+  moves?: StoredMoveEntry[];
+  deletes?: StoredDeleteEntry[];
+}
+
 export interface UsePendingOperationsArgs {
   masterList: MasterList | null;
   itemLookup: Map<string, MasterListItem>;
@@ -20,24 +36,27 @@ export interface UsePendingOperationsResult {
 
 const RESTORE_ERROR = 'Unable to restore pending operations:';
 
-const hasEntries = (moves: PendingMap<PendingMoveEntry>, deletes: PendingMap<PendingDeleteEntry>) =>
-  Object.keys(moves).length > 0 || Object.keys(deletes).length > 0;
+function hasEntries(moves: PendingMap<PendingMoveEntry>, deletes: PendingMap<PendingDeleteEntry>): boolean {
+  return Object.keys(moves).length > 0 || Object.keys(deletes).length > 0;
+}
 
-const buildMoveEntry = (item: MasterListItem, targetId: string, targetName: string): PendingMoveEntry => ({
-  itemId: item.id,
-  itemName: item.name,
-  targetCategoryId: targetId,
-  targetCategoryName: targetName,
-});
+function buildMoveEntry(item: MasterListItem, targetId: string, targetName: string): PendingMoveEntry {
+  return {
+    itemId: item.id,
+    itemName: item.name,
+    targetCategoryId: targetId,
+    targetCategoryName: targetName,
+  };
+}
 
-const extractMoves = (
-  entries: unknown[],
+function extractMoves(
+  entries: StoredMoveEntry[] | undefined,
   itemLookup: Map<string, MasterListItem>,
   categoryNameLookup: Map<string, string>
-) => {
-  if (!Array.isArray(entries)) return {};
+) {
+  if (!entries?.length) return {};
   const result: PendingMap<PendingMoveEntry> = {};
-  entries.forEach((raw: any) => {
+  entries.forEach((raw) => {
     if (!raw?.itemId) return;
     const item = itemLookup.get(raw.itemId);
     if (!item) return;
@@ -46,25 +65,25 @@ const extractMoves = (
     result[raw.itemId] = buildMoveEntry(item, targetId, targetName);
   });
   return result;
-};
+}
 
-const extractDeletes = (entries: unknown[], itemLookup: Map<string, MasterListItem>) => {
-  if (!Array.isArray(entries)) return {};
+function extractDeletes(entries: StoredDeleteEntry[] | undefined, itemLookup: Map<string, MasterListItem>) {
+  if (!entries?.length) return {};
   const result: PendingMap<PendingDeleteEntry> = {};
-  entries.forEach((raw: any) => {
+  entries.forEach((raw) => {
     if (!raw?.itemId) return;
     const item = itemLookup.get(raw.itemId);
     if (!item) return;
     result[raw.itemId] = { itemId: item.id, itemName: item.name };
   });
   return result;
-};
+}
 
-const rebuildMoves = (
+function rebuildMoves(
   map: PendingMap<PendingMoveEntry>,
   itemLookup: Map<string, MasterListItem>,
   categoryNameLookup: Map<string, string>
-) => {
+) {
   const result: PendingMap<PendingMoveEntry> = {};
   Object.values(map).forEach((entry) => {
     const item = itemLookup.get(entry.itemId);
@@ -74,9 +93,9 @@ const rebuildMoves = (
     result[entry.itemId] = buildMoveEntry(item, targetId, targetName);
   });
   return result;
-};
+}
 
-const rebuildDeletes = (map: PendingMap<PendingDeleteEntry>, itemLookup: Map<string, MasterListItem>) => {
+function rebuildDeletes(map: PendingMap<PendingDeleteEntry>, itemLookup: Map<string, MasterListItem>) {
   const result: PendingMap<PendingDeleteEntry> = {};
   Object.values(map).forEach((entry) => {
     const item = itemLookup.get(entry.itemId);
@@ -84,25 +103,25 @@ const rebuildDeletes = (map: PendingMap<PendingDeleteEntry>, itemLookup: Map<str
     result[entry.itemId] = { itemId: entry.itemId, itemName: item.name };
   });
   return result;
-};
+}
 
-const readStoredEntries = (itemLookup: Map<string, MasterListItem>, categoryNameLookup: Map<string, string>) => {
-  const stored = readStoredJson(PENDING_OPERATIONS_KEY, RESTORE_ERROR) as any;
-  const moves = extractMoves(stored?.moves ?? [], itemLookup, categoryNameLookup);
-  const deletes = extractDeletes(stored?.deletes ?? [], itemLookup);
+function readStoredEntries(itemLookup: Map<string, MasterListItem>, categoryNameLookup: Map<string, string>) {
+  const stored = readStoredJson(PENDING_OPERATIONS_KEY, RESTORE_ERROR) as StoredPayload | null;
+  const moves = extractMoves(stored?.moves, itemLookup, categoryNameLookup);
+  const deletes = extractDeletes(stored?.deletes, itemLookup);
   return { moves, deletes };
-};
+}
 
-const writeStoredEntries = (moves: PendingMap<PendingMoveEntry>, deletes: PendingMap<PendingDeleteEntry>) => {
+function writeStoredEntries(moves: PendingMap<PendingMoveEntry>, deletes: PendingMap<PendingDeleteEntry>): void {
   const payload = { moves: Object.values(moves), deletes: Object.values(deletes) };
   window.localStorage.setItem(PENDING_OPERATIONS_KEY, JSON.stringify(payload));
-};
+}
 
-export const usePendingOperations = ({
+export function usePendingOperations({
   masterList,
   itemLookup,
   categoryNameLookup,
-}: UsePendingOperationsArgs): UsePendingOperationsResult => {
+}: UsePendingOperationsArgs): UsePendingOperationsResult {
   const [pendingMoves, setPendingMoves] = useState<PendingMap<PendingMoveEntry>>({});
   const [pendingDeletes, setPendingDeletes] = useState<PendingMap<PendingDeleteEntry>>({});
   const hasLoaded = useRef(false);
@@ -135,4 +154,4 @@ export const usePendingOperations = ({
     setPendingDeletes,
     hasPendingChanges,
   };
-};
+}

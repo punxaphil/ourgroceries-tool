@@ -54,11 +54,7 @@ const renamePayload = (target: RenameTarget, name: string) => {
   return { endpoint: '/api/master/rename-item', body: { itemId: target.id, newName: name } };
 };
 
-const requestRename = async (
-  target: RenameTarget,
-  name: string,
-  onUnauthorized: () => void
-) => {
+const requestRename = async (target: RenameTarget, name: string, onUnauthorized: () => void) => {
   const { endpoint, body } = renamePayload(target, name);
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -89,7 +85,11 @@ const prepareRename = (target: RenameTarget | null, value: string, busy: boolean
   return { target, name };
 };
 
-export const useRenameModal = ({ addToast, onMasterListUpdate, onUnauthorized }: UseRenameModalArgs): UseRenameModalResult => {
+export const useRenameModal = ({
+  addToast,
+  onMasterListUpdate,
+  onUnauthorized,
+}: UseRenameModalArgs): UseRenameModalResult => {
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [renameValue, setRenameValue] = useState('');

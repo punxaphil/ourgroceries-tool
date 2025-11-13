@@ -1,11 +1,11 @@
-import type { RequestHandler } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { createHttpError } from '../utils/httpError.js';
 import { findSession, removeSession } from '../services/sessionStore.js';
 import { clearSessionCookie, readSessionId } from '../utils/sessionCookie.js';
 
 const UNAUTHORIZED_MESSAGE = 'Authentication required.';
 
-export const requireSession: RequestHandler = (req, res, next) => {
+export function requireSession(req: Request, res: Response, next: NextFunction): void {
   const sessionId = readSessionId(req);
   if (!sessionId) throw createHttpError(401, UNAUTHORIZED_MESSAGE);
   const session = findSession(sessionId);
@@ -16,4 +16,4 @@ export const requireSession: RequestHandler = (req, res, next) => {
   }
   req.sessionId = sessionId;
   next();
-};
+}

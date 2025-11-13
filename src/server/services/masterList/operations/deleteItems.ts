@@ -8,9 +8,6 @@ async function applyDeletes(client: OurGroceries, input: DeleteMasterItemsInput)
   await Promise.all(tasks);
 }
 
-export function deleteMasterItems(
-  sessionId: string,
-  input: DeleteMasterItemsInput
-): Promise<FormattedMasterList> {
+export function deleteMasterItems(sessionId: string, input: DeleteMasterItemsInput): Promise<FormattedMasterList> {
   return mutateMasterList(sessionId, (client) => applyDeletes(client, input));
 }

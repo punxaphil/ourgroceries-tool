@@ -86,10 +86,7 @@ const parseErrorMessage = async (response: Response): Promise<string> => {
   }
 };
 
-const sendReorderRequest = async (
-  details: DropDetails,
-  onUnauthorized: () => void
-): Promise<MasterList | null> => {
+const sendReorderRequest = async (details: DropDetails, onUnauthorized: () => void): Promise<MasterList | null> => {
   const response = await fetch('/api/master/reorder-categories', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

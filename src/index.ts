@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { createApp } from './server/app.js';
 import { getEnvNumber } from './server/utils/env.js';
 import { clearOurGroceriesClientCache } from './server/services/ourGroceriesClient.js';

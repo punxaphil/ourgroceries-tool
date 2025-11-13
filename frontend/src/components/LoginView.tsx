@@ -36,7 +36,11 @@ const LoginView = ({ busy, error, onSubmit, onClearError }: LoginViewProps) => {
     <div className="login-wrapper">
       <form className="login-form" onSubmit={handleSubmit}>
         <h1>OurGroceries Tool</h1>
-        {error && <p className="login-error" role="alert">{error}</p>}
+        {error && (
+          <p className="login-error" role="alert">
+            {error}
+          </p>
+        )}
         <label htmlFor="email">Email</label>
         <input
           id="email"

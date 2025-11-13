@@ -20,19 +20,21 @@ type AppLayersProps = {
   children: React.ReactNode;
 };
 
-const AppLayers = (props: AppLayersProps) => (
-  <>
-    <ToastLayer
-      toasts={props.toasts}
-      onDismiss={props.toastHandlers.onDismiss}
-      onCancelAutoDismiss={props.toastHandlers.onCancelAutoDismiss}
-      onCategorySelect={props.toastHandlers.onCategorySelect}
-    />
-    <ApplyModal {...props.applyModalProps} />
-    <RenameModal {...props.renameModalProps} />
-    <CreateCategoryModal {...props.createCategoryModalProps} />
-    {props.children}
-  </>
-);
+function AppLayers(props: AppLayersProps): React.JSX.Element {
+  return (
+    <>
+      <ToastLayer
+        toasts={props.toasts}
+        onDismiss={props.toastHandlers.onDismiss}
+        onCancelAutoDismiss={props.toastHandlers.onCancelAutoDismiss}
+        onCategorySelect={props.toastHandlers.onCategorySelect}
+      />
+      <ApplyModal {...props.applyModalProps} />
+      <RenameModal {...props.renameModalProps} />
+      <CreateCategoryModal {...props.createCategoryModalProps} />
+      {props.children}
+    </>
+  );
+}
 
 export default AppLayers;
